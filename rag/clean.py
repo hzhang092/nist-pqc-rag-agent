@@ -6,9 +6,10 @@ This script performs several cleaning and normalization steps:
 - Whitespace normalization (line endings, extra spaces).
 - De-hyphenation of words split across lines.
 - Removal of standalone page numbers.
-- Detection and removal of repeated boilerplate content (headers/footers)
-  on a per-document basis.
-- Optional joining of wrapped lines into paragraphs.
+- Detection and removal of repeated boilerplate content (headers/footers).
+- **Smart, content-aware line joining:** It joins lines that are part of
+  prose paragraphs while preserving the line-by-line structure of verbatim
+  content like tables, code/pseudocode, and mathematical equations.
 
 The main entry point is `run_clean`, which reads a JSONL file, adds a new
 field with the cleaned text (e.g., "text_clean"), and writes a new JSONL file.
@@ -45,9 +46,159 @@ class CleanConfig:
 # ----------------------------
 
 _ZWSP_RE = re.compile(r"[\u200B\u200C\u200D\uFEFF]")   # zero-width chars
-_MULTI_SPACE_RE = re.compile(r"[ \t]+")
+#_MULTI_SPACE_RE = re.compile(r"[ \t]+")
 _PAGE_NUM_RE = re.compile(r"^\s*(page\s*)?\d+(\s*of\s*\d+)?\s*$", re.I)
 _HYPHEN_BREAK_RE = re.compile(r"([A-Za-z])-\n([a-z])")  # "algo-\nrithm" -> "algorithm"
+_MULTI_SPACE_RE = re.compile(r"[ \t]+")
+_REPEAT_SPACES_RE = re.compile(r"( {2,}|\t{1,})")          # column-like spacing
+_TABLE_PIPE_RE = re.compile(r"\|")                         # markdown-like tables
+_MATH_RE = re.compile(r"(\$|\\\(|\\\)|\\\[|\\\])")         # latex-ish math markers
+
+def looks_like_table_line(line: str) -> bool:
+    """Heuristically checks if a line looks like it's part of a table."""
+    s = line.rstrip("\n")
+    if not s.strip():
+        return False
+    # Markdown / LlamaParse table patterns
+    if s.strip().startswith("|") or s.count("|") >= 2:
+        return True
+    # Column alignment in plaintext tables: repeated multi-spaces separating fields
+    if len(_REPEAT_SPACES_RE.findall(s)) >= 2:
+        return True
+    return False
+
+def looks_like_code_or_algo_line(line: str) -> bool:
+    """Heuristically checks if a line looks like code, pseudocode, or an algorithm step."""
+    s = line.rstrip("\n")
+    if not s.strip():
+        return False
+    # Indentation often indicates code/pseudocode or nested structure
+    if s.startswith("    ") or s.startswith("\t"):
+        return True
+    # Common pseudocode tokens / syntax-ish symbols
+    if any(tok in s for tok in ("::=", ":=", "->", "<-", "{", "}", "[", "]")):
+        return True
+    # Step numbering / algorithm style
+    if re.match(r"^\s*(\d+\.|\(\d+\)|Step\s+\d+[:.]|Algorithm\s+\d+[:.])", s, re.I):
+        return True
+    # Input/Output/Require/Ensure patterns
+    if re.match(r"^\s*(Input|Output|Require|Ensure|Given)[:\s]", s, re.I):
+        return True
+    return False
+
+def looks_like_math_line(line: str) -> bool:
+    """Heuristically checks if a line contains mathematical notation."""
+    s = line.rstrip("\n")
+    if not s.strip():
+        return False
+    if _MATH_RE.search(s):
+        return True
+    # Heuristic: lots of mathy symbols
+    if sum(ch in s for ch in "=<>±×÷∑∏∈∉≈≡≤≥⊕⊗") >= 1:
+        return True
+    return False
+
+def is_verbatim_line(line: str) -> bool:
+    """Determines if a line should be treated as verbatim (table, code, or math)."""
+    return (
+        looks_like_table_line(line)
+        or looks_like_code_or_algo_line(line)
+        or looks_like_math_line(line)
+    )
+
+def should_join_as_wrapped_prose(curr: str, nxt: str) -> bool:
+    """
+    Decides whether to join the current line with the next one.
+
+    This is the core logic for distinguishing between hard line wraps within a
+    prose paragraph and meaningful line breaks (e.g., between paragraphs,
+    before a list item, or around verbatim content).
+
+    Returns `True` if `curr` and `nxt` should be joined into a single line.
+    """
+    c = curr.rstrip()
+    n = nxt.lstrip()
+
+    if not c or not n:
+        return False
+
+    # Don't join verbatim-ish lines
+    if is_verbatim_line(c) or is_verbatim_line(n):
+        return False
+
+    # Don't join headings / labels (often end with colon)
+    if c.endswith(":"):
+        return False
+
+    # If curr ends with sentence punctuation, keep newline
+    if c.endswith((".", "!", "?", ";")):
+        return False
+
+    # If next line starts like a new section/bullet, keep newline
+    if re.match(r"^(\-|\*|•|\d+\.|\(\d+\))\s+", n):
+        return False
+
+    # Typical wrapped-prose signature: next line starts lowercase or continuation punctuation
+    if re.match(r"^[a-z(]", n):
+        return True
+
+    # Also join if curr is long-ish (likely wrapped) and next starts with a word
+    if len(c) >= 60 and re.match(r"^[A-Za-z]", n):
+        return True
+
+    return False
+
+def smart_join_lines(lines: List[str]) -> List[str]:
+    """
+    Intelligently joins wrapped prose lines while preserving verbatim blocks.
+
+    It iterates through lines, deciding whether to join a line with the next
+    based on `should_join_as_wrapped_prose`. It keeps verbatim lines (tables,
+    code, math) and paragraph breaks intact.
+    """
+    out: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        if line.strip() == "":
+            out.append("")
+            i += 1
+            continue
+
+        # Preserve verbatim blocks line-by-line
+        if is_verbatim_line(line):
+            out.append(line)
+            i += 1
+            continue
+
+        # Build a prose paragraph by joining only where it looks like PDF wrapping
+        buf = line
+        j = i
+        while j + 1 < len(lines):
+            nxt = lines[j + 1].rstrip()
+            if nxt.strip() == "":
+                break
+            if should_join_as_wrapped_prose(buf, nxt):
+                buf = buf + " " + nxt.lstrip()
+                j += 1
+            else:
+                break
+
+        out.append(_MULTI_SPACE_RE.sub(" ", buf).strip())
+        i = j + 1
+
+    # Collapse multiple blank lines to a single blank line
+    cleaned: List[str] = []
+    empty_run = 0
+    for ln in out:
+        if ln.strip() == "":
+            empty_run += 1
+            if empty_run <= 1:
+                cleaned.append("")
+        else:
+            empty_run = 0
+            cleaned.append(ln)
+    return cleaned
 
 
 def normalize_unicode(s: str) -> str:
@@ -194,7 +345,15 @@ def detect_boilerplate(
 
 def clean_page_text(raw: str, boiler_canon: set, cfg: CleanConfig) -> str:
     """
-    Applies the full cleaning pipeline to the text of a single page.
+    Applies the full, structure-aware cleaning pipeline to a single page's text.
+
+    The process is as follows:
+    1. Basic normalization (Unicode, whitespace, de-hyphenation).
+    2. Remove lines that are just page numbers.
+    3. Remove detected boilerplate (headers/footers).
+    4. Use `smart_join_lines` to selectively join wrapped prose lines while
+       preserving the structure of tables, code, and math.
+    5. Collapse any remaining runs of multiple blank lines.
 
     Args:
         raw: The raw text content of the page.
@@ -204,36 +363,43 @@ def clean_page_text(raw: str, boiler_canon: set, cfg: CleanConfig) -> str:
     Returns:
         The cleaned and normalized text as a single string.
     """
+    # 1) Unicode + whitespace normalization
     s = normalize_unicode(raw)
     s = normalize_whitespace(s)
+
+    # 2) Fix hyphenation across line breaks: "algo-\nrithm" -> "algorithm"
     s = dehyphenate(s)
 
+    # 3) Split into lines and remove stand-alone page number lines
     lines = s.split("\n")
     lines = remove_standalone_page_numbers(lines)
 
-    # Remove boilerplate by canonical match
+    # 4) Remove header/footer boilerplate (canonical match)
     kept = []
     for ln in lines:
         if canon_line(ln) in boiler_canon:
             continue
         kept.append(ln.rstrip())
 
-    # Collapse multiple blank lines to a single blank line
-    squashed = []
-    empty_run = 0
-    for ln in kept:
-        if ln.strip() == "":
-            empty_run += 1
-            if empty_run <= 1:
-                squashed.append("")
-        else:
-            empty_run = 0
-            squashed.append(ln)
-
+    # 5) Preserve technical structure, only join where it looks like wrapped prose
     if cfg.join_wrapped_lines:
-        squashed = join_wrapped_paragraph_lines(squashed)
+        kept = smart_join_lines(kept)
+    else:
+        # Still collapse multi-blank runs even if not joining
+        squashed = []
+        empty_run = 0
+        for ln in kept:
+            if ln.strip() == "":
+                empty_run += 1
+                if empty_run <= 1:
+                    squashed.append("")
+            else:
+                empty_run = 0
+                squashed.append(ln)
+        kept = squashed
 
-    return "\n".join(squashed).strip()
+    # 6) Final output
+    return "\n".join(kept).strip()
 
 
 def load_pages_jsonl(path: Path) -> List[dict]:

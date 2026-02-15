@@ -1,3 +1,19 @@
+"""
+Cleans raw text extracted from PDFs, stored in a `pages.jsonl` file.
+
+This script performs several cleaning and normalization steps:
+- Unicode normalization (NFKC) and ligature replacement.
+- Whitespace normalization (line endings, extra spaces).
+- De-hyphenation of words split across lines.
+- Removal of standalone page numbers.
+- Detection and removal of repeated boilerplate content (headers/footers)
+  on a per-document basis.
+- Optional joining of wrapped lines into paragraphs.
+
+The main entry point is `run_clean`, which reads a JSONL file, adds a new
+field with the cleaned text (e.g., "text_clean"), and writes a new JSONL file.
+"""
+
 # rag/clean.py
 from __future__ import annotations
 
@@ -16,6 +32,7 @@ from typing import Dict, Iterable, List
 
 @dataclass
 class CleanConfig:
+    """Configuration for the text cleaning process."""
     header_footer_lines: int = 3          # look at first/last N lines per page
     boilerplate_ratio: float = 0.6        # remove lines appearing on >= 60% pages (per doc)
     min_line_len: int = 3                 # ignore tiny lines for boilerplate detection
@@ -34,6 +51,12 @@ _HYPHEN_BREAK_RE = re.compile(r"([A-Za-z])-\n([a-z])")  # "algo-\nrithm" -> "alg
 
 
 def normalize_unicode(s: str) -> str:
+    """
+    Performs unicode normalization and replaces common ligatures.
+    - Applies NFKC normalization.
+    - Removes soft hyphens and zero-width spaces.
+    - Replaces 'fi' and 'fl' ligatures.
+    """
     s = unicodedata.normalize("NFKC", s)
     s = s.replace("\u00ad", "")           # soft hyphen
     s = _ZWSP_RE.sub("", s)               # zero-width spaces
@@ -42,6 +65,13 @@ def normalize_unicode(s: str) -> str:
 
 
 def normalize_whitespace(s: str) -> str:
+    """
+    Normalizes newlines and collapses multiple spaces/tabs.
+    - Converts all newlines to `\n`.
+    - Strips trailing whitespace from each line.
+    - Collapses multiple spaces/tabs into a single space.
+    - Strips leading/trailing whitespace from the whole string.
+    """
     s = s.replace("\r\n", "\n").replace("\r", "\n")
     s = "\n".join(line.rstrip() for line in s.split("\n"))
     s = "\n".join(_MULTI_SPACE_RE.sub(" ", line) for line in s.split("\n"))
@@ -49,10 +79,12 @@ def normalize_whitespace(s: str) -> str:
 
 
 def dehyphenate(s: str) -> str:
+    """Joins words that were hyphenated across a line break."""
     return _HYPHEN_BREAK_RE.sub(r"\1\2", s)
 
 
 def remove_standalone_page_numbers(lines: List[str]) -> List[str]:
+    """Removes lines that appear to be just page numbers (e.g., "Page 12", "12")."""
     return [ln for ln in lines if not _PAGE_NUM_RE.match(ln)]
 
 
@@ -104,7 +136,17 @@ def detect_boilerplate(
 ) -> Dict[str, set]:
     """
     Find repeated header/footer lines per doc, using frequency across pages.
-    Returns: {doc_id: set(canonical_lines_to_remove)}
+
+    It works by:
+    1. Iterating through each document.
+    2. For each page, collecting candidate lines from the top and bottom.
+    3. Canonicalizing these lines (lowercase, no digits) to handle variations.
+    4. Counting the frequency of each canonical line across all pages in the doc.
+    5. Flagging lines that appear on a high percentage of pages as boilerplate.
+
+    Returns:
+        A dictionary mapping each `doc_id` to a set of canonical boilerplate
+        lines that should be removed from that document.
     """
     boiler_by_doc: Dict[str, set] = {}
 
@@ -151,6 +193,17 @@ def detect_boilerplate(
 # ----------------------------
 
 def clean_page_text(raw: str, boiler_canon: set, cfg: CleanConfig) -> str:
+    """
+    Applies the full cleaning pipeline to the text of a single page.
+
+    Args:
+        raw: The raw text content of the page.
+        boiler_canon: A set of canonical boilerplate lines for this document.
+        cfg: The cleaning configuration.
+
+    Returns:
+        The cleaned and normalized text as a single string.
+    """
     s = normalize_unicode(raw)
     s = normalize_whitespace(s)
     s = dehyphenate(s)
@@ -184,6 +237,7 @@ def clean_page_text(raw: str, boiler_canon: set, cfg: CleanConfig) -> str:
 
 
 def load_pages_jsonl(path: Path) -> List[dict]:
+    """Loads a JSONL file where each line is a JSON object representing a page."""
     pages: List[dict] = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -194,6 +248,7 @@ def load_pages_jsonl(path: Path) -> List[dict]:
 
 
 def write_pages_jsonl(path: Path, pages: Iterable[dict]) -> None:
+    """Writes a list of page objects to a JSONL file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for p in pages:
@@ -209,8 +264,19 @@ def run_clean(
     doc_id_key: str = "doc_id",
 ) -> None:
     """
-    Reads pages.jsonl, writes pages_clean.jsonl with an added `out_text_key`.
-    You can adapt key names via parameters.
+    Reads pages from a JSONL file, cleans their text, and writes to a new file.
+
+    This is the main entry point for the cleaning script. It orchestrates the
+    process of loading data, detecting boilerplate on a per-document basis,
+    cleaning each page's text, and saving the result.
+
+    Args:
+        pages_path: Path to the input `pages.jsonl` file.
+        out_path: Path to write the output `pages_clean.jsonl` file.
+        cfg: Cleaning configuration object.
+        text_key: The key in the input JSON objects containing the text to clean.
+        out_text_key: The key to use for the cleaned text in the output objects.
+        doc_id_key: The key for the document identifier, used to group pages.
     """
     pages_path = Path(pages_path)
     out_path = Path(out_path)

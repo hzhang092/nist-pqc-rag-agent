@@ -1,25 +1,23 @@
 """
-Chunks cleaned text from a `pages_clean.jsonl` file into smaller pieces.
+Chunking engine to split documents into smaller, context-aware pieces.
 
-This script implements a content-aware chunking strategy suitable for preparing
-text for retrieval-augmented generation (RAG) systems. The goal is to create
-appropriately sized, overlapping text chunks that respect document structure
-(like paragraph breaks) to provide good context for embedding models.
+This module provides a set of functions to split text from PDF pages into
+semantically coherent chunks suitable for retrieval-augmented generation (RAG).
+The core idea is to respect the structural integrity of technical content
+like tables, algorithms, and mathematical formulas, while also breaking down
+prose into manageable sizes.
 
-The main steps are:
-1. Load cleaned page data from a JSONL file.
-2. Group pages by document.
-3. For each document, concatenate all its page text into a single string.
-4. Apply a greedy chunking algorithm with a sliding window and overlap.
-5. The algorithm tries to split at "nice" boundaries (paragraph breaks, newlines,
-   or sentence-ending punctuation) rather than cutting words in half.
-6. Each chunk is saved as a JSON object with metadata, including the original
-   document ID, the page range it covers, and its character length.
-7. The final list of chunks is written to an output JSONL file.
-
-The main entry point is `run_chunking`.
+Key components:
+- Heuristics to identify "verbatim-ish" content (tables, code, math).
+- `split_into_blocks`: Splits a page's text into blocks based on blank lines,
+  then decides whether to preserve line breaks (for verbatim content) or
+  join lines (for prose).
+- `pack_blocks_into_chunks`: Greedily packs these blocks into larger chunks
+  that meet certain size constraints, with optional overlap.
+- `run_chunking_per_page`: The main entry point that processes a JSONL file
+  of cleaned pages, chunks each page, and writes the results to a new
+  JSONL file.
 """
-
 # rag/chunk.py
 from __future__ import annotations
 
@@ -27,18 +25,68 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List, Dict
 from collections import defaultdict
 
 
 @dataclass
 class ChunkConfig:
     """Configuration for the chunking process."""
-    target_chars: int = 4000
-    overlap_chars: int = 600
-    min_chars: int = 400
-    breakpoint_lookback: int = 600   # how far back to look for a nice split
-    prefer_paragraph_breaks: bool = True
+    target_chars: int = 1400      # << smaller for precision (250–400 tokens-ish)
+    overlap_blocks: int = 1       # overlap by repeating last N blocks into next chunk
+    min_chars: int = 250          # drop tiny junk chunks
+    max_chars: int = 2200         # allow a bit of spill if a block is big
+
+
+# --- Heuristics to preserve technical structure ---
+_REPEAT_SPACES_RE = re.compile(r"( {2,}|\t{1,})")
+_MATH_RE = re.compile(r"(\$|\\\(|\\\)|\\\[|\\\])")
+
+def looks_like_table_line(line: str) -> bool:
+    """Heuristically checks if a line appears to be part of a table."""
+    s = line.rstrip()
+    if not s.strip():
+        return False
+    if s.strip().startswith("|") or s.count("|") >= 2:
+        return True
+    if len(_REPEAT_SPACES_RE.findall(s)) >= 2:
+        return True
+    return False
+
+def looks_like_code_or_algo_line(line: str) -> bool:
+    """Heuristically checks if a line appears to be part of code or an algorithm."""
+    s = line.rstrip()
+    if not s.strip():
+        return False
+    if s.startswith("    ") or s.startswith("\t"):
+        return True
+    if any(tok in s for tok in ("::=", ":=", "->", "<-", "{", "}", "[", "]")):
+        return True
+    if re.match(r"^\s*(\d+\.|\(\d+\)|Step\s+\d+[:.]|Algorithm\s+\d+[:.])", s, re.I):
+        return True
+    if re.match(r"^\s*(Input|Output|Require|Ensure|Given)[:\s]", s, re.I):
+        return True
+    return False
+
+def looks_like_math_line(line: str) -> bool:
+    """Heuristically checks if a line appears to be part of a mathematical expression."""
+    s = line.rstrip()
+    if not s.strip():
+        return False
+    if _MATH_RE.search(s):
+        return True
+    if sum(ch in s for ch in "=<>±×÷∑∏∈∉≈≡≤≥⊕⊗") >= 1:
+        return True
+    return False
+
+def is_verbatimish_line(line: str) -> bool:
+    """
+    Determines if a line should be treated as "verbatim-ish" content.
+
+    This includes tables, code, algorithms, or mathematical notation, where
+    preserving the original line breaks and spacing is important.
+    """
+    return looks_like_table_line(line) or looks_like_code_or_algo_line(line) or looks_like_math_line(line)
 
 
 def load_jsonl(path: str | Path) -> List[dict]:
@@ -62,170 +110,114 @@ def write_jsonl(path: str | Path, rows: List[dict]) -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
-def _best_split_point(text: str, start: int, hard_end: int, cfg: ChunkConfig) -> int:
+def split_into_blocks(page_text: str) -> List[str]:
     """
-    Finds the best position to split a text chunk.
+    Splits a page of text into semantic blocks.
 
-    It searches backwards from a `hard_end` position to find a preferred
-    boundary, such as a paragraph break, newline, or sentence-ending punctuation.
-    This helps avoid splitting in the middle of a sentence or word.
+    The function first divides the text into groups of lines separated by blank
+    lines. It then analyzes each group to determine if it's "verbatim-ish"
+    (like a table, code, or math) or prose.
+
+    - For verbatim blocks, line breaks are preserved.
+    - For prose blocks, lines are joined to reverse hard wraps from PDF extraction.
 
     Args:
-        text: The full text of the document.
-        start: The start index of the current chunk attempt.
-        hard_end: The desired (but not strict) end index for the chunk.
+        page_text: The text content of a single page.
+
+    Returns:
+        A list of strings, where each string is a content block.
+    """
+    lines = page_text.split("\n")
+    blocks: List[List[str]] = []
+    cur: List[str] = []
+
+    for ln in lines:
+        if ln.strip() == "":
+            if cur:
+                blocks.append(cur)
+                cur = []
+        else:
+            cur.append(ln.rstrip())
+    if cur:
+        blocks.append(cur)
+
+    # Light post-process:
+    # If a block is mostly verbatimish lines (tables/algo/math), keep line breaks.
+    # Otherwise, it’s prose-ish; we can join lines within the block to avoid PDF hard wraps.
+    out_blocks: List[str] = []
+    for b in blocks:
+        if not b:
+            continue
+        verb_count = sum(1 for ln in b if is_verbatimish_line(ln))
+        if verb_count >= max(1, len(b) // 2):
+            out_blocks.append("\n".join(b).strip())
+        else:
+            out_blocks.append(" ".join(ln.strip() for ln in b).strip())
+
+    return [b for b in out_blocks if b]
+
+
+def pack_blocks_into_chunks(blocks: List[str], cfg: ChunkConfig) -> List[str]:
+    """
+    Greedily packs content blocks into larger chunks based on character limits.
+
+    This function iterates through blocks and adds them to the current chunk
+    until the `target_chars` limit is approached. It includes logic to handle
+    oversized blocks and to overlap chunks by carrying over a specified number
+    of blocks from the end of one chunk to the beginning of the next.
+
+    Args:
+        blocks: A list of content blocks from `split_into_blocks`.
         cfg: The chunking configuration.
 
     Returns:
-        The optimal index at which to split the text.
+        A list of strings, where each string is a final chunk of text.
     """
-    if hard_end >= len(text):
-        return len(text)
+    chunks: List[str] = []
+    cur: List[str] = []
+    cur_len = 0
 
-    window_start = max(start, hard_end - cfg.breakpoint_lookback)
-    window = text[window_start:hard_end]
+    def flush():
+        nonlocal cur, cur_len
+        if not cur:
+            return
+        text = "\n\n".join(cur).strip()
+        if len(text) >= cfg.min_chars:
+            chunks.append(text)
+        # overlap: carry last N blocks
+        if cfg.overlap_blocks > 0:
+            carry = cur[-cfg.overlap_blocks:]
+        else:
+            carry = []
+        cur = carry[:]
+        cur_len = sum(len(x) for x in cur) + (2 * max(0, len(cur) - 1))
 
-    # Prefer paragraph breaks
-    if cfg.prefer_paragraph_breaks:
-        idx = window.rfind("\n\n")
-        if idx != -1:
-            return window_start + idx + 2  # split after the break
-
-    # Next: single newline
-    idx = window.rfind("\n")
-    if idx != -1:
-        return window_start + idx + 1
-
-    # Next: sentence-ish punctuation followed by space
-    # (Not perfect, but helpful)
-    m = list(re.finditer(r"[.!?]\s", window))
-    if m:
-        return window_start + m[-1].end()
-
-    # Fallback: hard cut
-    return hard_end
-
-
-def _page_span_for_range(page_ranges: List[Tuple[int, int, int]], start: int, end: int) -> Tuple[int, int]:
-    """
-    Determines the start and end page numbers for a given character range.
-
-    Args:
-        page_ranges: A list of tuples, where each tuple contains
-                     (page_number, start_char_index, end_char_index) for the document.
-        start: The starting character index of the chunk.
-        end: The ending character index of the chunk.
-
-    Returns:
-        A tuple containing the (start_page, end_page).
-    """
-    start_page = None
-    end_page = None
-
-    for page_no, p_start, p_end in page_ranges:
-        # overlap condition
-        if p_end > start and p_start < end:
-            if start_page is None:
-                start_page = page_no
-            end_page = page_no
-
-    # Fallback if something weird happens
-    if start_page is None:
-        start_page = page_ranges[0][0]
-        end_page = page_ranges[-1][0]
-
-    return start_page, end_page
-
-
-def chunk_doc_pages(pages: List[dict], cfg: ChunkConfig,
-                    doc_id_key: str, page_key: str, text_key: str) -> List[dict]:
-    """
-    Chunks the text of a single document, which is provided as a list of pages.
-
-    It first concatenates the text from all pages, then applies a greedy chunking
-    algorithm to split it into overlapping chunks of a target size.
-
-    Args:
-        pages: A list of page dictionaries, sorted by page number.
-        cfg: The chunking configuration.
-        doc_id_key: Key for the document ID in the page dictionaries.
-        page_key: Key for the page number.
-        text_key: Key for the cleaned text.
-
-    Returns:
-        A list of chunk dictionaries, each with metadata.
-    """
-    # Build concatenated doc text while tracking per-page char ranges
-    parts: List[str] = []
-    page_ranges: List[Tuple[int, int, int]] = []
-
-    cursor = 0
-    for p in pages:
-        page_no = int(p[page_key])
-        txt = (p.get(text_key) or "").strip()
-        if not txt:
+    for blk in blocks:
+        blk_len = len(blk)
+        # If a single block is huge (big table), allow it as its own chunk
+        if blk_len > cfg.max_chars and not cur:
+            chunks.append(blk.strip())
             continue
 
-        # Add a separator between pages (helps avoid accidental word-joins)
-        if parts:
-            sep = "\n\n"
-            parts.append(sep)
-            cursor += len(sep)
+        # Would adding this block exceed target?
+        proposed = cur_len + (2 if cur else 0) + blk_len
+        if proposed <= cfg.target_chars or (proposed <= cfg.max_chars and cur_len < cfg.min_chars):
+            cur.append(blk)
+            cur_len = proposed
+        else:
+            flush()
+            # try to add after flush
+            if len(blk) > cfg.max_chars and not cur:
+                chunks.append(blk.strip())
+            else:
+                cur.append(blk)
+                cur_len = len(blk)
 
-        start_idx = cursor
-        parts.append(txt)
-        cursor += len(txt)
-        end_idx = cursor
-
-        page_ranges.append((page_no, start_idx, end_idx))
-
-    doc_text = "".join(parts)
-    if not doc_text.strip():
-        return []
-
-    # Greedy chunking with overlap
-    chunks: List[dict] = []
-    start = 0
-    chunk_i = 0
-
-    while start < len(doc_text):
-        hard_end = min(len(doc_text), start + cfg.target_chars)
-        end = _best_split_point(doc_text, start, hard_end, cfg)
-
-        # Ensure progress (avoid infinite loops)
-        if end <= start:
-            end = min(len(doc_text), start + cfg.target_chars)
-
-        chunk_text = doc_text[start:end].strip()
-
-        # Drop tiny chunks (usually noise at end)
-        if len(chunk_text) >= cfg.min_chars:
-            sp, ep = _page_span_for_range(page_ranges, start, end)
-            chunks.append({
-                "chunk_id": f"{pages[0][doc_id_key]}::c{chunk_i:05d}",
-                "doc_id": pages[0][doc_id_key],
-                "start_page": sp,
-                "end_page": ep,
-                "text": chunk_text,
-                "char_len": len(chunk_text),
-                "approx_tokens": max(1, len(chunk_text) // 4),  # rough heuristic
-            })
-            chunk_i += 1
-
-        if end >= len(doc_text):
-            break
-
-        # Overlap: step back a bit for next chunk
-        start = max(0, end - cfg.overlap_chars)
-
-        # Optional: avoid starting in the middle of whitespace runs
-        while start < len(doc_text) and doc_text[start].isspace():
-            start += 1
-
+    flush()
     return chunks
 
 
-def run_chunking(
+def run_chunking_per_page(
     pages_clean_path: str | Path,
     chunks_out_path: str | Path,
     cfg: ChunkConfig = ChunkConfig(),
@@ -234,38 +226,58 @@ def run_chunking(
     text_key: str = "text_clean",
 ) -> None:
     """
-    Main function to run the chunking process.
+    Runs the full chunking pipeline on a file of cleaned pages.
 
-    It loads cleaned pages, groups them by document, chunks each document's text,
-    and writes the resulting chunks to an output file.
+    This function reads a JSONL file where each line is a dictionary representing
+    a cleaned page from a document. It groups pages by document, then processes
+    each page's text to generate chunks. The resulting chunks are written to a
+    new JSONL file with detailed metadata.
 
     Args:
-        pages_clean_path: Path to the input `pages_clean.jsonl` file.
-        chunks_out_path: Path to write the output `chunks.jsonl` file.
-        cfg: Chunking configuration object.
-        doc_id_key: Key for the document identifier.
-        page_key: Key for the page number.
-        text_key: Key for the text to be chunked.
+        pages_clean_path: Path to the input JSONL file containing cleaned pages.
+        chunks_out_path: Path to write the output JSONL file of chunks.
+        cfg: The chunking configuration.
+        doc_id_key: The dictionary key for the document identifier.
+        page_key: The dictionary key for the page number.
+        text_key: The dictionary key for the cleaned page text.
     """
-    rows = load_jsonl(pages_clean_path)
+    pages = load_jsonl(pages_clean_path)
 
-    # Group by doc_id
+    # Normalize page key if needed
+    for p in pages:
+        if page_key not in p and "page" in p:
+            p[page_key] = p["page"]
+
+    # Group by doc
     by_doc: Dict[str, List[dict]] = defaultdict(list)
-    for r in rows:
-        doc_id = r.get(doc_id_key)
-        if not doc_id:
-            doc_id = r.get("source_path") or r.get("source") or "unknown_doc"
-            r[doc_id_key] = doc_id
-        # normalize page key if you used "page"
-        if page_key not in r and "page" in r:
-            r[page_key] = r["page"]
-        by_doc[doc_id].append(r)
+    for p in pages:
+        doc_id = p.get(doc_id_key) or p.get("source_path") or p.get("source") or "unknown_doc"
+        p[doc_id_key] = doc_id
+        by_doc[doc_id].append(p)
 
-    all_chunks: List[dict] = []
-    for doc_id, pages in by_doc.items():
-        # sort pages
-        pages_sorted = sorted(pages, key=lambda x: int(x[page_key]))
-        doc_chunks = chunk_doc_pages(pages_sorted, cfg, doc_id_key, page_key, text_key)
-        all_chunks.extend(doc_chunks)
+    out_chunks: List[dict] = []
 
-    write_jsonl(chunks_out_path, all_chunks)
+    for doc_id, ps in by_doc.items():
+        ps = sorted(ps, key=lambda x: int(x[page_key]))
+        for p in ps:
+            page_no = int(p[page_key])
+            text = (p.get(text_key) or "").strip()
+            if not text:
+                continue
+
+            blocks = split_into_blocks(text)
+            chunk_texts = pack_blocks_into_chunks(blocks, cfg)
+
+            for i, ct in enumerate(chunk_texts):
+                out_chunks.append({
+                    "chunk_id": f"{doc_id}::p{page_no:04d}::c{i:03d}",
+                    "doc_id": doc_id,
+                    "page_number": page_no,
+                    "start_page": page_no,
+                    "end_page": page_no,
+                    "text": ct,
+                    "char_len": len(ct),
+                    "approx_tokens": max(1, len(ct) // 4),
+                })
+
+    write_jsonl(chunks_out_path, out_chunks)

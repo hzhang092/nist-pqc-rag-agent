@@ -1,21 +1,8 @@
-from rag.chunk import run_chunking, ChunkConfig
+from rag.chunk import run_chunking_per_page, ChunkConfig
 
-PAGES_CLEAN = "data/processed/pages_clean.jsonl"
-CHUNKS_OUT = "data/processed/chunks.jsonl"
-
-cfg = ChunkConfig(
-    target_chars=4000,
-    overlap_chars=600,
-    min_chars=400,
+run_chunking_per_page(
+    pages_clean_path="data/processed/pages_clean.jsonl",
+    chunks_out_path="data/processed/chunks.jsonl",
+    cfg=ChunkConfig(target_chars=1400, overlap_blocks=1, min_chars=250, max_chars=2200),
 )
-
-run_chunking(
-    pages_clean_path=PAGES_CLEAN,
-    chunks_out_path=CHUNKS_OUT,
-    cfg=cfg,
-    doc_id_key="doc_id",
-    page_key="page_number",   # or "page" if that's what you use
-    text_key="text_clean",
-)
-
-print("Wrote:", CHUNKS_OUT)
+print("Wrote: data/processed/chunks.jsonl")

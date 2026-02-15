@@ -2,77 +2,67 @@ import os
 import json
 import asyncio
 import nest_asyncio
+from pathlib import Path
 from llama_parse import LlamaParse
+from pypdf import PdfReader
 from dotenv import load_dotenv
 
-# Apply nest_asyncio to allow nested event loops (common in notebooks/scripts)
 nest_asyncio.apply()
-
-# Load API key from .env
 load_dotenv()
 
-# Directory Configuration
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW_DIR = os.path.join(BASE_DIR, "data", "raw_pdfs")
-PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
+RAW_DIR = Path("data/raw_pdfs")
+PROCESSED_DIR = Path("data/processed")
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-# Ensure processed directory exists
-os.makedirs(PROCESSED_DIR, exist_ok=True)
+async def parse_and_validate(pdf_path: Path):
+    print(f"🚀 Parsing: {pdf_path.name}...")
+    
+    # 1. Sanity Check: Get True Page Count
+    try:
+        true_pages = len(PdfReader(str(pdf_path)).pages)
+    except Exception as e:
+        print(f"⚠️  Could not read PDF {pdf_path.name}: {e}")
+        return
 
-async def parse_pdf(file_name):
-    file_path = os.path.join(RAW_DIR, file_name)
-    print(f"🚀 Parsing: {file_name}...")
-
-    # Initialize parser with specific instructions for NIST docs
-    # "result_type='markdown'" is crucial for preserving Math tables in FIPS docs
+    # 2. Use LlamaParse JSON Mode (Safer than string splitting)
     parser = LlamaParse(
         result_type="markdown",
         verbose=True,
-        language="en",
-        # Optional: Add parsing instruction to help the model understand the context
-        parsing_instruction="This is a NIST technical standard containing cryptographic algorithms, math formulas, and tables. Preserve all mathematical notation in LaTeX format."
+        parsing_instruction="This is a NIST technical standard. Preserve all tables and LaTeX math."
     )
-
-    # valid method to get page-level details is using the JSON output mode
-    json_objs = await parser.aget_json_result(file_path)
+    
+    # Get structured JSON directly
+    json_objs = await parser.aget_json_result(str(pdf_path))
     
     # The result is a list of dicts (one per parsed document). 
     # Usually NIST docs are 1 document, so we take the first item.
-    json_result = json_objs[0] 
+    json_result = json_objs[0]
 
+    parsed_pages = json_result["pages"]
+    
+    # 3. Validation: Did we lose any pages?
+    if len(parsed_pages) != true_pages:
+        print(f"🚨 WARNING: {pdf_path.name} has {true_pages} pages, but LlamaParse returned {len(parsed_pages)}!")
+    
+    # 4. Save Structured Output
     output_data = []
-    
-    # Iterate through the 'pages' in the JSON response
-    for page in json_result["pages"]:
-        page_num = page["page"]
-        content = page["text"]  # This is the markdown content for that specific page
-        
+    for page in parsed_pages:
         output_data.append({
-            "file_name": file_name,
-            "page_number": page_num,
-            "content": content
+            "file_name": pdf_path.name,
+            "page_number": page["page"],
+            "content": page["text"]
         })
-
-    # Save to processed folder
-    output_filename = f"{os.path.splitext(file_name)[0]}_parsed.json"
-    output_path = os.path.join(PROCESSED_DIR, output_filename)
-    
-    with open(output_path, "w", encoding="utf-8") as f:
+        
+    output_filename = f"{pdf_path.stem}_parsed.json"
+    with open(PROCESSED_DIR / output_filename, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
         
-    print(f"✅ Saved processed data to: {output_filename}")
+    print(f"✅ Saved {len(parsed_pages)} pages to {output_filename}")
 
 async def main():
-    # Get all PDF files from the raw directory
-    pdf_files = [f for f in os.listdir(RAW_DIR) if f.lower().endswith('.pdf')]
-    
-    if not pdf_files:
-        print("No PDFs found in data/raw_pdfs/")
-        return
-
-    # Process files (sequentially to avoid rate limits on free tier, or gather for parallel)
-    for pdf_file in pdf_files:
-        await parse_pdf(pdf_file)
+    pdf_paths = sorted(list(RAW_DIR.glob("*.pdf")))
+    for pdf_path in pdf_paths:
+        await parse_and_validate(pdf_path)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -11,6 +11,8 @@ INDEX_PATH = OUT_DIR / "faiss.index"
 STORE_PATH = OUT_DIR / "chunk_store.jsonl"
 
 TOP_K = 5
+CANDIDATES_K = 25          # retrieve more, then dedupe down
+MAX_HITS_PER_PAGE = 1      # tighten to 1; set 2 if you want slightly more density
 
 def load_store():
     store = {}
@@ -19,6 +21,10 @@ def load_store():
             rec = json.loads(line)
             store[int(rec["vector_id"])] = rec
     return store
+
+def page_key(rec):
+    # Dedupe at page-span level; you can change to (doc_id, page_number) if you prefer
+    return (rec.get("doc_id"), rec.get("start_page"), rec.get("end_page"))
 
 def main():
     qtext = " ".join(sys.argv[1:]).strip()
@@ -37,17 +43,40 @@ def main():
     assert q.shape[1] == dim
 
     index = faiss.read_index(str(INDEX_PATH))
-    scores, ids = index.search(q, TOP_K)  # scores are inner products (cosine if normalized)
+    scores, ids = index.search(q, CANDIDATES_K)  # search more, then dedupe
+
+    # Dedupe logic
+    kept = []
+    page_counts = {}  # key -> count
+    for vid, score in zip(ids[0], scores[0]):
+        if vid < 0:
+            continue  # FAISS uses -1 for missing sometimes
+        rec = store.get(int(vid))
+        if rec is None:
+            continue
+
+        key = page_key(rec)
+        page_counts[key] = page_counts.get(key, 0) + 1
+        if page_counts[key] > MAX_HITS_PER_PAGE:
+            continue
+
+        kept.append((int(vid), float(score), rec))
+        if len(kept) >= TOP_K:
+            break
 
     print(f"\nQuery: {qtext}\n")
-    for rank, (vid, score) in enumerate(zip(ids[0], scores[0]), start=1):
-        rec = store[int(vid)]
-        print(f"[{rank}] score={float(score):.4f}  {rec['doc_id']}  p{rec['start_page']}-p{rec['end_page']}  ({rec['chunk_id']})")
-        # Optional preview if you stored text:
+    for rank, (vid, score, rec) in enumerate(kept, start=1):
+        print(
+            f"[{rank}] score={score:.4f}  {rec['doc_id']}  "
+            f"p{rec['start_page']}-p{rec['end_page']}  ({rec['chunk_id']})"
+        )
         if "text" in rec:
             preview = rec["text"][:300].replace("\n", " ")
             print(f"    {preview}...")
         print()
+
+    if len(kept) < TOP_K:
+        print(f"[WARN] Only {len(kept)} unique results after dedupe (try raising CANDIDATES_K).")
 
 if __name__ == "__main__":
     main()

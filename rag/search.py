@@ -2,11 +2,13 @@
 # backend-agnostic
 import sys
 from rag.retriever.factory import get_retriever
+from rag.config import SETTINGS, validate_settings
 
-TOP_K = 5
-BACKEND = "faiss"  # later: "pgvector"
+TOP_K = SETTINGS.TOP_K
+BACKEND = SETTINGS.VECTOR_BACKEND
 
 def main():
+    validate_settings()
     qtext = " ".join(sys.argv[1:]).strip()
     if not qtext:
         print('Usage: python -m rag.search "your question"')

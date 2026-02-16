@@ -396,3 +396,5 @@ Minimum tests:
 - limitations + next steps (reranking, richer section parsing, KG-lite)
 
 > If you want to make the LangChain/LangGraph usage pop even more in the README, add one explicit line in the intro like: “Agent orchestration is implemented with LangGraph (bounded tool-using controller), while ingestion/chunking/eval remain deterministic and framework-independent.” That reads like an engineer wrote it.
+
+> consider use a local llm Ollama or Mistral for the demo to avoid API key issues and speed up response times, especially if you have a smaller eval set.

@@ -1,3 +1,4 @@
 llama-parse
 python-dotenv
 nest_asyncio
+google-genai

@@ -7,13 +7,43 @@ from typing import Callable
 
 from rag.config import SETTINGS
 
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv()
+
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+
+
+def get_model_name() -> str:
+    """Returns the effective Gemini model name from environment/config."""
+    return os.getenv("GEMINI_MODEL", MODEL)
+
+
+def _resolve_client_kwargs() -> dict[str, object]:
+    """
+    Resolves explicit `google.genai.Client(...)` kwargs from env vars.
+
+    Uses Google AI Studio API key mode only.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        return {"api_key": api_key}
+
+    raise RuntimeError(
+        "Missing Google API key. Set GEMINI_API_KEY (for example in a root .env file)."
+    )
+
 
 def make_generate_fn() -> Callable[[str], str]:
     """
     Gemini Developer API generator: generate_fn(prompt) -> text
 
-    Uses google-genai SDK. The client reads GEMINI_API_KEY from the environment
-    by default. (Docs assume GEMINI_API_KEY is set.)
+    Uses google-genai SDK with explicit client credential arguments resolved
+    from environment variables for deterministic behavior across SDK versions.
     """
     try:
         from google import genai
@@ -23,10 +53,9 @@ def make_generate_fn() -> Callable[[str], str]:
             "Missing dependency: google-genai. Install with: pip install -U google-genai"
         ) from e
 
-    model = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    model = get_model_name()
 
-    # Client gets API key from GEMINI_API_KEY automatically; alternatively pass api_key=...
-    client = genai.Client()
+    client = genai.Client(**_resolve_client_kwargs())
 
     def _gen(prompt: str) -> str:
         # Simple retry for free-tier rate limits / transient errors

@@ -1,3 +1,26 @@
+"""
+Embedding Generation Script.
+
+This script is responsible for generating vector embeddings for the document
+chunks created by the chunking process. It uses a sentence-transformer model
+to convert the text of each chunk into a high-dimensional vector.
+
+The key steps are:
+1.  Load the document chunks from `chunks.jsonl`.
+2.  Initialize a specified sentence-transformer model (e.g., BAAI/bge-base-en-v1.5).
+3.  Generate embeddings for all chunk texts in batches. The embeddings are
+    normalized to facilitate cosine similarity calculations in the retrieval step.
+4.  Save the generated embeddings as a NumPy array (`.npy` file).
+5.  Create a "chunk store" (`.jsonl` file) that maps integer vector IDs to the
+    original chunk metadata and text. This is essential for retrieving the
+    source content after a vector search.
+6.  Write a metadata file (`.json`) that contains information about the
+    embedding process, including the model name, vector dimensions, and paths
+    to the generated files.
+
+This script is a crucial part of the ingestion pipeline, preparing the data for
+efficient similarity search by a vector index.
+"""
 # rag/embed.py
 from __future__ import annotations
 
@@ -9,9 +32,18 @@ from tqdm import tqdm
 try:
     import orjson
     def dumps(obj) -> str:
+        """
+        Serializes a Python object to a JSON-formatted string.
+        Uses the highly optimized `orjson` if available, otherwise falls back
+        to the standard `json` library.
+        """
         return orjson.dumps(obj).decode("utf-8")
 except Exception:
     def dumps(obj) -> str:
+        """
+        Serializes a Python object to a JSON-formatted string.
+        Uses the standard `json` library.
+        """
         return json.dumps(obj, ensure_ascii=False)
 
 from sentence_transformers import SentenceTransformer
@@ -28,6 +60,7 @@ STORE_JSONL = OUT_DIR / "chunk_store.jsonl"
 META_JSON = OUT_DIR / "emb_meta.json"
 
 def load_chunks(path: Path) -> list[dict]:
+    """Loads document chunks from a JSONL file."""
     chunks = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -38,6 +71,15 @@ def load_chunks(path: Path) -> list[dict]:
     return chunks
 
 def main():
+    """
+    Main function to generate and save embeddings.
+
+    This function orchestrates the entire embedding generation process:
+    - Loads chunks.
+    - Prepares text data and metadata for storage.
+    - Initializes and runs the sentence-transformer model.
+    - Saves the embeddings, chunk store, and metadata to disk.
+    """
     assert CHUNKS_PATH.exists(), f"Missing {CHUNKS_PATH}"
 
     chunks = load_chunks(CHUNKS_PATH)

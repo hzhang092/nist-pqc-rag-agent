@@ -1,3 +1,15 @@
+"""
+Command-line interface for performing a vector search over the document chunks.
+
+This script provides a simple way to query the RAG system from the command line.
+It initializes a retriever based on the configured backend (e.g., FAISS, LanceDB),
+takes a query string from the command-line arguments, and prints the top K
+most relevant document chunks.
+
+Usage:
+    python -m rag.search "your question here"
+"""
+
 # rag/search.py 
 # backend-agnostic
 import sys
@@ -8,6 +20,9 @@ TOP_K = SETTINGS.TOP_K
 BACKEND = SETTINGS.VECTOR_BACKEND
 
 def main():
+    """
+    Parses command-line arguments, runs a search, and prints the results.
+    """
     validate_settings()
     qtext = " ".join(sys.argv[1:]).strip()
     if not qtext:

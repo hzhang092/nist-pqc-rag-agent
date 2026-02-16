@@ -1,3 +1,19 @@
+"""
+Standalone script for running a FAISS-based vector search.
+
+This script provides a command-line interface to perform a similarity search
+directly against a FAISS index. It loads the pre-built index, the sentence
+transformer model, and the chunk metadata to find and display the most
+relevant document chunks for a given query.
+
+It also includes logic to de-duplicate results to avoid returning multiple
+chunks from the same page or page span, improving the diversity of the
+search results.
+
+Usage:
+    python -m rag.search_faiss "your question here"
+"""
+
 # rag/search_faiss.py
 import sys, json
 from pathlib import Path
@@ -15,6 +31,7 @@ CANDIDATES_K = 25          # retrieve more, then dedupe down
 MAX_HITS_PER_PAGE = 1      # tighten to 1; set 2 if you want slightly more density
 
 def load_store():
+    """Loads the chunk store from a JSONL file into a dictionary."""
     store = {}
     with STORE_PATH.open("r", encoding="utf-8") as f:
         for line in f:
@@ -23,10 +40,23 @@ def load_store():
     return store
 
 def page_key(rec):
+    """
+    Generates a key for a record to be used for de-duplication.
+
+    The key is based on the document ID and the start/end page numbers.
+    This helps ensure that the search results are not cluttered with multiple
+    chunks from the exact same location.
+    """
     # Dedupe at page-span level; you can change to (doc_id, page_number) if you prefer
     return (rec.get("doc_id"), rec.get("start_page"), rec.get("end_page"))
 
 def main():
+    """
+    Main function to execute the search.
+
+    Parses the command-line query, loads the model and FAISS index,
+    performs the search, de-duplicates the results, and prints them to the console.
+    """
     qtext = " ".join(sys.argv[1:]).strip()
     if not qtext:
         print('Usage: python -m rag.search_faiss "your question"')

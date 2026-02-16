@@ -231,6 +231,7 @@ def build_cited_answer(
         "2) You may ONLY use citation markers that appear in the evidence headers.\n"
         f"3) If the evidence is insufficient, reply exactly: {REFUSAL_TEXT}\n"
         "4) Be concise and factual.\n\n"
+        "5) NEVER hallucinate or use information not in the provided evidence.\n\n"
         f"Question:\n{question}\n\n"
         f"Evidence:\n{context}\n"
     )

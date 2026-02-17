@@ -10,6 +10,9 @@ it correctly handles various scenarios, including:
 The tests use `monkeypatch` to modify the application settings in-memory and
 a fake generation function (`fake_gen`) to simulate the language model's
 output, allowing for controlled testing of the validation logic.
+
+To run the tests, use the command:
+    pytest tests/test_rag_answer.py
 """
 from __future__ import annotations
 
@@ -159,3 +162,52 @@ def test_citations_list_matches_used_keys(monkeypatch):
     assert "[c1]" in result.answer
     assert result.citations[0].key == "c1"
     assert [c.key for c in result.citations] == ["c1", "c2"]
+
+
+def test_deterministic_citation_key_assignment_across_hit_order(monkeypatch):
+    """
+    Determinism test:
+    - Same logical hit set, different input order
+    - Evidence selection + stable sorting must lead to identical c1/c2 mapping
+    - tests dedup (duplicate chunk-a)
+    - tests stable sorting tie-break (two chunks with equal score)
+    - tests key assignment stability (same c1/c2 mapping even when input hit order flips)
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(
+            rag_answer_module.SETTINGS,
+            ASK_MIN_EVIDENCE_HITS=2,
+            ASK_MAX_CONTEXT_CHUNKS=2,   # keep evidence size fixed
+            ASK_MAX_CONTEXT_CHARS=10_000,
+        ),
+    )
+
+    # Two top-scoring chunks tie on score to exercise tie-breaks.
+    # Tie-break order should be deterministic by (doc_id, start_page, end_page, chunk_id).
+    hits_a = [
+        ChunkHit(score=0.90, chunk_id="chunk-b", doc_id="B_DOC", start_page=5, end_page=5, text="B evidence."),
+        ChunkHit(score=0.90, chunk_id="chunk-a", doc_id="A_DOC", start_page=5, end_page=5, text="A evidence."),
+        # Duplicate chunk-a with worse score: dedup should keep the best one (0.90)
+        ChunkHit(score=0.10, chunk_id="chunk-a", doc_id="A_DOC", start_page=5, end_page=5, text="A dup worse."),
+        # Lower score: should be dropped because we cap to 2 chunks
+        ChunkHit(score=0.80, chunk_id="chunk-c", doc_id="A_DOC", start_page=6, end_page=6, text="C evidence."),
+    ]
+    hits_b = list(reversed(hits_a))  # different incoming order
+
+    def fake_gen(_prompt: str) -> str:
+        # Always cite c1 then c2 so we can compare what those map to.
+        return "First grounded sentence [c1]. Second grounded sentence [c2]."
+
+    r1 = build_cited_answer("Q", hits=hits_a, generate_fn=fake_gen)
+    r2 = build_cited_answer("Q", hits=hits_b, generate_fn=fake_gen)
+
+    # Same mapping and same ordering across different input order.
+    assert [c.key for c in r1.citations] == ["c1", "c2"]
+    assert [c.key for c in r2.citations] == ["c1", "c2"]
+
+    assert [c.chunk_id for c in r1.citations] == [c.chunk_id for c in r2.citations]
+
+    # Optional stronger assertion: with the tie, A_DOC should come before B_DOC
+    assert [c.chunk_id for c in r1.citations] == ["chunk-a", "chunk-b"]

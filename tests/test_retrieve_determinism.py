@@ -63,25 +63,29 @@ class FakeRetriever:
     """A mock retriever that returns a predefined list of hits."""
     def __init__(self, hits):
         self._hits = hits
+
     def search(self, _q: str, k: int = 5):
         return list(self._hits)[:k]
 
+class FakeBM25Retriever(FakeRetriever):
+    """Fake BM25 with a deterministic lexical scorer."""
+    def score_text(self, query: str, text: str) -> float:
+        # Deterministic toy score: count how many "technical tokens" appear.
+        # Good enough for tests; doesn’t need to reflect real BM25.
+        q = query.lower()
+        t = (text or "").lower()
+        return float(int(q in t))
+
 def test_hybrid_search_deterministic_across_backend_order():
-    """
-    Verifies that `hybrid_search` produces a deterministic final ranking
-    even if the underlying retrievers (e.g., FAISS, BM25) return their
-    results in a different order across runs.
-    """
-    # Deterministic hybrid_search even if underlying retrievers return different order
     h1 = ChunkHit(score=9, chunk_id="X", doc_id="D", start_page=2, end_page=2, text="x")
     h2 = ChunkHit(score=8, chunk_id="Y", doc_id="D", start_page=1, end_page=1, text="y")
     h3 = ChunkHit(score=7, chunk_id="Z", doc_id="D", start_page=3, end_page=3, text="z")
 
     faiss_a = FakeRetriever([h1, h2, h3])
-    bm25_a  = FakeRetriever([h2, h1, h3])
+    bm25_a  = FakeBM25Retriever([h2, h1, h3])
 
     faiss_b = FakeRetriever([h3, h2, h1])  # reversed
-    bm25_b  = FakeRetriever([h1, h3, h2])
+    bm25_b  = FakeBM25Retriever([h1, h3, h2])
 
     out_a = hybrid_search("ML-KEM.KeyGen", top_k=3, use_query_fusion=False, faiss=faiss_a, bm25=bm25_a)
     out_b = hybrid_search("ML-KEM.KeyGen", top_k=3, use_query_fusion=False, faiss=faiss_b, bm25=bm25_b)

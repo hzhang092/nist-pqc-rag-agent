@@ -61,6 +61,14 @@ class Settings:
     VECTOR_BACKEND: str = _env_str("VECTOR_BACKEND", "faiss")
     # The default number of top results to retrieve from the vector store.
     TOP_K: int = _env_int("TOP_K", 8)
+    # Retrieval strategy: "base" (single backend) or "hybrid" (faiss+bm25+fusion).
+    RETRIEVAL_MODE: str = _env_str("RETRIEVAL_MODE", "hybrid")
+    # Enable deterministic query variants and second-stage fusion.
+    RETRIEVAL_QUERY_FUSION: bool = _env_bool("RETRIEVAL_QUERY_FUSION", True)
+    # Reciprocal Rank Fusion constant.
+    RETRIEVAL_RRF_K0: int = _env_int("RETRIEVAL_RRF_K0", 60)
+    # Candidate expansion factor before fusion.
+    RETRIEVAL_CANDIDATE_MULTIPLIER: int = _env_int("RETRIEVAL_CANDIDATE_MULTIPLIER", 4)
 
     # --- Answering / evidence policy ---
     # The maximum number of retrieved chunks to include in the context for the LLM.
@@ -95,7 +103,7 @@ def validate_settings() -> None:
     Raises:
         ValueError: If any of the settings have invalid or inconsistent values.
     """
-    allowed_backends = {"faiss", "pgvector", "chroma"}
+    allowed_backends = {"faiss", "bm25", "pgvector", "chroma"}
     if SETTINGS.VECTOR_BACKEND not in allowed_backends:
         raise ValueError(
             f"VECTOR_BACKEND must be one of {sorted(allowed_backends)}, "
@@ -103,6 +111,16 @@ def validate_settings() -> None:
         )
     if SETTINGS.TOP_K <= 0:
         raise ValueError("TOP_K must be > 0")
+    allowed_modes = {"base", "hybrid"}
+    if SETTINGS.RETRIEVAL_MODE not in allowed_modes:
+        raise ValueError(
+            f"RETRIEVAL_MODE must be one of {sorted(allowed_modes)}, "
+            f"got {SETTINGS.RETRIEVAL_MODE!r}"
+        )
+    if SETTINGS.RETRIEVAL_RRF_K0 <= 0:
+        raise ValueError("RETRIEVAL_RRF_K0 must be > 0")
+    if SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER <= 0:
+        raise ValueError("RETRIEVAL_CANDIDATE_MULTIPLIER must be > 0")
     if SETTINGS.ASK_MAX_CONTEXT_CHUNKS <= 0:
         raise ValueError("ASK_MAX_CONTEXT_CHUNKS must be > 0")
     if SETTINGS.ASK_MAX_CONTEXT_CHARS <= 0:

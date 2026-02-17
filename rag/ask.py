@@ -13,6 +13,18 @@ It orchestrates the entire process:
 7.  Formats and prints the final answer and citations to the console in either
     human-readable or JSON format.
 
+How to use:
+    python -m rag.ask "What does FIPS 203 say about ML-KEM key generation?"
+    python -m rag.ask "Compare ML-DSA and SLH-DSA use-cases" --show-evidence
+    python -m rag.ask "What is Algorithm 19?" --mode hybrid --k 8 --json
+    python -m rag.ask "KeyGen details" --mode base --backend bm25 --no-query-fusion
+
+Used by:
+    - Direct CLI entrypoint for end-to-end retrieval + generation.
+    - Calls `rag.retrieve.retrieve` for evidence retrieval.
+    - Calls `rag.rag_answer.build_cited_answer` for citation-grounded answer synthesis.
+    - Uses `rag.llm.gemini.make_generate_fn` for model invocation.
+
 Usage:
     python -m rag.ask "Your question here" [--show-evidence] [--json]
 """
@@ -25,7 +37,7 @@ import json
 from rag.config import SETTINGS, validate_settings
 from rag.llm.gemini import get_model_name, make_generate_fn
 from rag.rag_answer import build_cited_answer
-from rag.retriever.factory import get_retriever  # assumes you have this from Day 1
+from rag.retrieve import retrieve
 from rag.types import AnswerResult
 
 
@@ -47,6 +59,18 @@ def main():
     parser.add_argument("--json", dest="as_json", action="store_true", default=SETTINGS.ASK_JSON_DEFAULT)
     parser.add_argument("--k", type=int, default=None, help="Override TOP_K for this run.")
     parser.add_argument("--backend", type=str, default=None, help="Override VECTOR_BACKEND for this run.")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default=SETTINGS.RETRIEVAL_MODE,
+        choices=["base", "hybrid"],
+        help="Retrieval mode: base backend or hybrid (faiss+bm25).",
+    )
+    parser.add_argument(
+        "--no-query-fusion",
+        action="store_true",
+        help="Disable deterministic query variant fusion.",
+    )
     args = parser.parse_args()
 
     validate_settings()
@@ -59,8 +83,13 @@ def main():
     k = args.k or SETTINGS.TOP_K
     model_name = get_model_name()
 
-    retriever = get_retriever(backend)
-    hits = retriever.search(question, k=k)
+    hits = retrieve(
+        query=question,
+        k=k,
+        mode=args.mode,
+        backend=backend,
+        use_query_fusion=not args.no_query_fusion,
+    )
 
     if args.show_evidence:
         print(f"\n=== Model ===\n{model_name}")

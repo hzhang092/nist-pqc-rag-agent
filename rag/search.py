@@ -1,36 +1,55 @@
 """
-Command-line interface for performing a vector search over the document chunks.
+Command-line interface for performing retrieval over the document chunks.
 
 This script provides a simple way to query the RAG system from the command line.
-It initializes a retriever based on the configured backend (e.g., FAISS, LanceDB),
-takes a query string from the command-line arguments, and prints the top K
-most relevant document chunks.
+It uses the shared retrieval entrypoint (`rag.retrieve.retrieve`) so search and
+ask stay aligned on behavior.
+
+How to use:
+    python -m rag.search "ML-KEM key generation"
+    python -m rag.search "Algorithm 19" --mode hybrid --k 8
+    python -m rag.search "ML-DSA verification" --mode base --backend bm25
+    python -m rag.search "SLH-DSA parameters" --no-query-fusion
+
+Used by:
+    - Direct CLI entrypoint for developers (not imported by other project modules).
+    - Shares retrieval logic with `rag.ask` through `rag.retrieve.retrieve`.
 
 Usage:
     python -m rag.search "your question here"
 """
 
-# rag/search.py 
-# backend-agnostic
-import sys
-from rag.retriever.factory import get_retriever
-from rag.config import SETTINGS, validate_settings
+import argparse
 
-TOP_K = SETTINGS.TOP_K
-BACKEND = SETTINGS.VECTOR_BACKEND
+from rag.config import SETTINGS, validate_settings
+from rag.retrieve import retrieve
 
 def main():
     """
     Parses command-line arguments, runs a search, and prints the results.
     """
+    parser = argparse.ArgumentParser(prog="python -m rag.search")
+    parser.add_argument("query", nargs="+", help="Question text (wrap in quotes recommended).")
+    parser.add_argument("--k", type=int, default=SETTINGS.TOP_K)
+    parser.add_argument("--mode", type=str, default=SETTINGS.RETRIEVAL_MODE, choices=["base", "hybrid"])
+    parser.add_argument("--backend", type=str, default=SETTINGS.VECTOR_BACKEND)
+    parser.add_argument("--no-query-fusion", action="store_true")
+    args = parser.parse_args()
+
     validate_settings()
-    qtext = " ".join(sys.argv[1:]).strip()
+
+    qtext = " ".join(args.query).strip()
     if not qtext:
         print('Usage: python -m rag.search "your question"')
-        sys.exit(1)
+        raise SystemExit(1)
 
-    retriever = get_retriever(BACKEND)
-    hits = retriever.search(qtext, k=TOP_K)
+    hits = retrieve(
+        query=qtext,
+        k=args.k,
+        mode=args.mode,
+        backend=args.backend,
+        use_query_fusion=not args.no_query_fusion,
+    )
 
     print(f"\nQuery: {qtext}\n")
     for i, h in enumerate(hits, start=1):

@@ -1,0 +1,6 @@
+interface:
+  display_name: "nist-pqc-rag-agent copilot"
+  short_description: "Plan + implement + eval a citation-grounded LangGraph RAG agent over NIST PQC PDFs."
+  default_prompt: "Use project_overview.md as source-of-truth. Keep Week-1 scope tight. No claim without citations."
+policy:
+  allow_implicit_invocation: true

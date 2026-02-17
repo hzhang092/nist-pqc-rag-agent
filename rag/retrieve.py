@@ -14,6 +14,8 @@ How to use (CLI):
     python -m rag.retrieve "ML-DSA signing" --mode base --backend faiss
     python -m rag.retrieve "SLH-DSA" --candidate-multiplier 6 --k0 80
     python -m rag.retrieve "ML-KEM" --no-query-fusion
+    python -m rag.retrieve "ML-KEM.Decaps" --rerank-pool 40
+    python -m rag.retrieve "Algorithm 19" --no-rerank
 
 How to use (Python):
     from rag.retrieve import retrieve
@@ -28,6 +30,24 @@ Used by:
 
 Usage:
     python -m rag.retrieve "Algorithm 19"
+
+Flags:
+    --k
+        Final number of hits returned to the caller.
+    --mode
+        Retrieval mode: "base" uses one backend, "hybrid" uses FAISS+BM25.
+    --backend
+        Backend for base mode (e.g., faiss, bm25).
+    --k0
+        RRF constant in 1/(k0 + rank); lower values favor top ranks more.
+    --candidate-multiplier
+        Candidate expansion per query before fusion.
+    --rerank-pool
+        Size of fused candidate pool considered by reranker before truncation to k.
+    --no-query-fusion
+        Disable deterministic domain rewrites of the input query.
+    --no-rerank
+        Disable lexical reranking stage after fusion.
 """
 
 from __future__ import annotations
@@ -76,8 +96,18 @@ def query_variants(query: str) -> List[str]:
     if "key generation" in lowered:
         variants.append("ML-KEM.KeyGen key generation")
 
+    if "ml-dsa" in lowered and "signing" in lowered:
+        variants.append("ML-DSA.Sign")
+    if "ml-dsa" in lowered and "verify" in lowered:
+        variants.append("ML-DSA.Verify")
+    if "slh-dsa" in lowered and "keygen" in lowered:
+        variants.append("SLH-DSA.KeyGen")
+    if "ml-kem" in lowered and "decapsulation" in lowered:
+        variants.append("ML-KEM.Decaps")
+
     alg_match = ALGORITHM_NUM_RE.search(original)
     if alg_match:
+        variants.append(f"Algorithm {alg_match.group(1)}")
         variants.append(f"Algorithm {alg_match.group(1)} ML-KEM.KeyGen")
 
     # Stable de-dup while preserving order
@@ -144,12 +174,59 @@ def rrf_fuse(rankings: Sequence[Iterable[ChunkHit]], top_k: int, k0: int = 60) -
     return fused
 
 
+def _query_technical_tokens(query: str) -> List[str]:
+    tokens = []
+    seen = set()
+    for token in TECH_TOKEN_RE.findall(query):
+        lowered = token.lower()
+        if lowered not in seen:
+            seen.add(lowered)
+            tokens.append(lowered)
+    return tokens
+
+
+def rerank_fused_hits(
+    query: str,
+    hits: List[ChunkHit],
+    top_k: int,
+    bm25: BM25Retriever,
+) -> List[ChunkHit]:
+    """Lightweight rerank by exact technical token presence then BM25 lexical score."""
+    technical_tokens = _query_technical_tokens(query)
+
+    def has_exact_token(hit: ChunkHit) -> bool:
+        if not technical_tokens:
+            return False
+        haystack = (hit.text or "").lower()
+        return any(token in haystack for token in technical_tokens)
+
+    scored = []
+    for hit in hits:
+        bm25_score = bm25.score_text(query, hit.text or "")
+        scored.append((has_exact_token(hit), bm25_score, hit))
+
+    ranked = sorted(
+        scored,
+        key=lambda item: (
+            -int(item[0]),
+            -item[1],
+            item[2].doc_id,
+            item[2].start_page,
+            item[2].chunk_id,
+        ),
+    )
+
+    return [item[2] for item in ranked[:top_k]]
+
+
 def hybrid_search(
     query: str,
     top_k: int = SETTINGS.TOP_K,
     candidate_multiplier: int = 4,
     k0: int = 60,
     use_query_fusion: bool = True,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
 ) -> List[ChunkHit]:
@@ -158,6 +235,8 @@ def hybrid_search(
         raise ValueError("top_k must be > 0")
     if candidate_multiplier <= 0:
         raise ValueError("candidate_multiplier must be > 0")
+    if rerank_pool <= 0:
+        raise ValueError("rerank_pool must be > 0")
 
     if faiss is None:
         try:
@@ -173,6 +252,7 @@ def hybrid_search(
     bm25_retriever = bm25 or BM25Retriever()
 
     per_source_k = max(top_k * candidate_multiplier, top_k)
+    fused_pool = max(top_k, rerank_pool)
     queries = query_variants(query) if use_query_fusion else [query]
 
     rankings: List[List[ChunkHit]] = []
@@ -182,7 +262,10 @@ def hybrid_search(
         rankings.append(vector_hits)
         rankings.append(bm25_hits)
 
-    return rrf_fuse(rankings, top_k=top_k, k0=k0)
+    fused = rrf_fuse(rankings, top_k=fused_pool, k0=k0)
+    if enable_rerank:
+        return rerank_fused_hits(query=query, hits=fused, top_k=top_k, bm25=bm25_retriever)
+    return fused[:top_k]
 
 
 def base_search(
@@ -192,19 +275,28 @@ def base_search(
     candidate_multiplier: int = 4,
     k0: int = 60,
     use_query_fusion: bool = True,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
 ) -> List[ChunkHit]:
     """Runs single-backend retrieval; optionally fuses deterministic query variants."""
     if top_k <= 0:
         raise ValueError("top_k must be > 0")
     if candidate_multiplier <= 0:
         raise ValueError("candidate_multiplier must be > 0")
+    if rerank_pool <= 0:
+        raise ValueError("rerank_pool must be > 0")
 
     retriever = get_retriever(backend)
     per_query_k = max(top_k * candidate_multiplier, top_k)
+    fused_pool = max(top_k, rerank_pool)
     queries = query_variants(query) if use_query_fusion else [query]
 
     rankings = [retriever.search(q, k=per_query_k) for q in queries]
-    return rrf_fuse(rankings, top_k=top_k, k0=k0)
+    fused = rrf_fuse(rankings, top_k=fused_pool, k0=k0)
+    if enable_rerank:
+        bm25_retriever = BM25Retriever()
+        return rerank_fused_hits(query=query, hits=fused, top_k=top_k, bm25=bm25_retriever)
+    return fused[:top_k]
 
 
 def retrieve(
@@ -215,6 +307,8 @@ def retrieve(
     use_query_fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
     candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
     k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
 ) -> List[ChunkHit]:
     """Shared retrieval entrypoint for search/ask (base or hybrid + fusion)."""
     selected_mode = mode.lower().strip()
@@ -225,6 +319,8 @@ def retrieve(
             candidate_multiplier=candidate_multiplier,
             k0=k0,
             use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
         )
     if selected_mode == "base":
         return base_search(
@@ -234,6 +330,8 @@ def retrieve(
             candidate_multiplier=candidate_multiplier,
             k0=k0,
             use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
         )
     raise ValueError(f"Unknown retrieval mode: {mode}")
 
@@ -242,12 +340,30 @@ def retrieve(
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m rag.retrieve")
     parser.add_argument("query", nargs="+", help="Question text (wrap in quotes recommended).")
-    parser.add_argument("--k", type=int, default=SETTINGS.TOP_K)
-    parser.add_argument("--mode", type=str, default=SETTINGS.RETRIEVAL_MODE, choices=["base", "hybrid"])
-    parser.add_argument("--backend", type=str, default=SETTINGS.VECTOR_BACKEND)
-    parser.add_argument("--k0", type=int, default=SETTINGS.RETRIEVAL_RRF_K0)
-    parser.add_argument("--candidate-multiplier", type=int, default=SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER)
-    parser.add_argument("--no-query-fusion", action="store_true")
+    parser.add_argument("--k", type=int, default=SETTINGS.TOP_K, help="Final number of results to return.")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default=SETTINGS.RETRIEVAL_MODE,
+        choices=["base", "hybrid"],
+        help="Retrieval mode: base backend or hybrid (faiss+bm25).",
+    )
+    parser.add_argument("--backend", type=str, default=SETTINGS.VECTOR_BACKEND, help="Backend for base mode.")
+    parser.add_argument("--k0", type=int, default=SETTINGS.RETRIEVAL_RRF_K0, help="RRF constant (1/(k0+rank)).")
+    parser.add_argument(
+        "--candidate-multiplier",
+        type=int,
+        default=SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+        help="Per-source candidate expansion before fusion (k * multiplier).",
+    )
+    parser.add_argument(
+        "--rerank-pool",
+        type=int,
+        default=SETTINGS.RETRIEVAL_RERANK_POOL,
+        help="Number of fused candidates considered before final rerank truncation.",
+    )
+    parser.add_argument("--no-query-fusion", action="store_true", help="Disable deterministic query rewrites.")
+    parser.add_argument("--no-rerank", action="store_true", help="Disable lightweight lexical reranking.")
     args = parser.parse_args()
 
     if args.mode == "base":
@@ -263,6 +379,8 @@ def main() -> None:
         use_query_fusion=not args.no_query_fusion,
         candidate_multiplier=args.candidate_multiplier,
         k0=args.k0,
+        enable_rerank=not args.no_rerank,
+        rerank_pool=args.rerank_pool,
     )
 
     print(f"\nQuery: {qtext}\n")

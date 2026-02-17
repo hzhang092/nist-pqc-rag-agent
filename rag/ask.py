@@ -18,6 +18,30 @@ How to use:
     python -m rag.ask "Compare ML-DSA and SLH-DSA use-cases" --show-evidence
     python -m rag.ask "What is Algorithm 19?" --mode hybrid --k 8 --json
     python -m rag.ask "KeyGen details" --mode base --backend bm25 --no-query-fusion
+    python -m rag.ask "ML-KEM.Decaps" --candidate-multiplier 6 --k0 55 --rerank-pool 40
+    python -m rag.ask "Algorithm 19" --no-rerank
+
+Flags:
+    --show-evidence
+        Print retrieved evidence snippets before answer generation.
+    --json
+        Print machine-readable JSON output instead of formatted text.
+    --k
+        Override final number of retrieved hits.
+    --backend
+        Override vector backend used by base mode.
+    --mode
+        Retrieval mode: "base" (single backend) or "hybrid" (faiss+bm25).
+    --no-query-fusion
+        Disable deterministic query variants before retrieval.
+    --k0
+        Reciprocal Rank Fusion constant; controls rank sensitivity.
+    --candidate-multiplier
+        Candidate expansion factor before fusion.
+    --rerank-pool
+        Number of fused candidates considered before rerank truncates to k.
+    --no-rerank
+        Disable lightweight lexical rerank over fused candidates.
 
 Used by:
     - Direct CLI entrypoint for end-to-end retrieval + generation.
@@ -55,8 +79,19 @@ def main():
     """
     parser = argparse.ArgumentParser(prog="python -m rag.ask")
     parser.add_argument("question", nargs="+", help="Question text (wrap in quotes recommended).")
-    parser.add_argument("--show-evidence", action="store_true", default=SETTINGS.ASK_SHOW_EVIDENCE_DEFAULT)
-    parser.add_argument("--json", dest="as_json", action="store_true", default=SETTINGS.ASK_JSON_DEFAULT)
+    parser.add_argument(
+        "--show-evidence",
+        action="store_true",
+        default=SETTINGS.ASK_SHOW_EVIDENCE_DEFAULT,
+        help="Print retrieved evidence snippets before answer generation.",
+    )
+    parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        default=SETTINGS.ASK_JSON_DEFAULT,
+        help="Print output as JSON.",
+    )
     parser.add_argument("--k", type=int, default=None, help="Override TOP_K for this run.")
     parser.add_argument("--backend", type=str, default=None, help="Override VECTOR_BACKEND for this run.")
     parser.add_argument(
@@ -71,6 +106,20 @@ def main():
         action="store_true",
         help="Disable deterministic query variant fusion.",
     )
+    parser.add_argument("--k0", type=int, default=SETTINGS.RETRIEVAL_RRF_K0, help="RRF constant (1/(k0+rank)).")
+    parser.add_argument(
+        "--candidate-multiplier",
+        type=int,
+        default=SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+        help="Per-source candidate expansion before fusion (k * multiplier).",
+    )
+    parser.add_argument(
+        "--rerank-pool",
+        type=int,
+        default=SETTINGS.RETRIEVAL_RERANK_POOL,
+        help="Number of fused candidates considered before final rerank truncation.",
+    )
+    parser.add_argument("--no-rerank", action="store_true", help="Disable lightweight lexical reranking.")
     args = parser.parse_args()
 
     validate_settings()
@@ -89,6 +138,10 @@ def main():
         mode=args.mode,
         backend=backend,
         use_query_fusion=not args.no_query_fusion,
+        candidate_multiplier=args.candidate_multiplier,
+        k0=args.k0,
+        enable_rerank=not args.no_rerank,
+        rerank_pool=args.rerank_pool,
     )
 
     if args.show_evidence:

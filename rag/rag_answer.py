@@ -12,11 +12,42 @@ The main entry point is `build_cited_answer`, which enforces a strict contract:
 - The model's raw output is rigorously validated by `enforce_inline_citations`
   to ensure every sentence is cited and no external information is used.
 - If validation fails, the system defaults to a safe, "I can't answer" response.
+
+How it works (current behavior):
+- `select_evidence` de-duplicates by `chunk_id`, sorts deterministically, applies
+    context limits, and can include adjacent chunks from the same document.
+- Neighbor expansion is controlled by `ASK_INCLUDE_NEIGHBOR_CHUNKS` and
+    `ASK_NEIGHBOR_WINDOW`, using `chunk_store.jsonl` vector adjacency.
+- Context budget is enforced by `ASK_MAX_CONTEXT_CHUNKS` and
+    `ASK_MAX_CONTEXT_CHARS`.
+- `build_context_and_citations` assigns stable citation keys (`c1`, `c2`, ...)
+    and builds the LLM evidence packet.
+- `enforce_inline_citations` requires:
+    1) at least one known `[c#]` marker,
+    2) every sentence to include a marker,
+    3) no unknown citation keys.
+- If evidence is below `ASK_MIN_EVIDENCE_HITS`, or validation fails,
+    output is normalized to `REFUSAL_TEXT` with empty citations.
+
+Used by:
+- `rag.ask` (calls `build_cited_answer` for answer synthesis).
+- `tests/test_rag_answer.py` (validates refusal/citation contracts and behavior).
+
+Configuration used by this module:
+- `ASK_MAX_CONTEXT_CHUNKS`
+- `ASK_MAX_CONTEXT_CHARS`
+- `ASK_MIN_EVIDENCE_HITS`
+- `ASK_REQUIRE_CITATIONS`
+- `ASK_INCLUDE_NEIGHBOR_CHUNKS`
+- `ASK_NEIGHBOR_WINDOW`
 """
 # rag/rag_answer.py
 from __future__ import annotations
 
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
 from rag.config import SETTINGS
@@ -25,6 +56,7 @@ from rag.types import AnswerResult, Citation, REFUSAL_TEXT, validate_answer
 
 
 _CITE_RE = re.compile(r"\[(c\d+)\]")
+CHUNK_STORE_PATH = Path("data/processed/chunk_store.jsonl")
 
 def _stable_sort_key(h: ChunkHit) -> tuple:
     """
@@ -35,6 +67,63 @@ def _stable_sort_key(h: ChunkHit) -> tuple:
     """
     # Deterministic tie-breaks matter for stable reruns/tests.
     return (-h.score, h.doc_id, h.start_page, h.end_page, h.chunk_id)
+
+
+@lru_cache(maxsize=1)
+def _load_chunk_store_maps() -> Tuple[Dict[str, int], Dict[int, dict]]:
+    """Loads cached `chunk_id <-> vector_id` maps from chunk store for neighbor lookup."""
+    chunk_to_vector: Dict[str, int] = {}
+    vector_to_rec: Dict[int, dict] = {}
+
+    if not CHUNK_STORE_PATH.exists():
+        return chunk_to_vector, vector_to_rec
+
+    with CHUNK_STORE_PATH.open("r", encoding="utf-8") as infile:
+        for line in infile:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            vector_id = int(rec.get("vector_id", -1))
+            chunk_id = rec.get("chunk_id", "")
+            if vector_id < 0 or not chunk_id:
+                continue
+            vector_to_rec[vector_id] = rec
+            chunk_to_vector[chunk_id] = vector_id
+
+    return chunk_to_vector, vector_to_rec
+
+
+def _neighbor_hits(hit: ChunkHit, window: int) -> List[ChunkHit]:
+    """Returns same-document neighboring chunks around `hit` using vector-id adjacency."""
+    if window <= 0:
+        return []
+
+    chunk_to_vector, vector_to_rec = _load_chunk_store_maps()
+    vector_id = chunk_to_vector.get(hit.chunk_id)
+    if vector_id is None:
+        return []
+
+    neighbors: List[ChunkHit] = []
+    for delta in range(1, window + 1):
+        for candidate_vid in (vector_id - delta, vector_id + delta):
+            rec = vector_to_rec.get(candidate_vid)
+            if rec is None:
+                continue
+            if rec.get("doc_id") != hit.doc_id:
+                continue
+            neighbors.append(
+                ChunkHit(
+                    score=hit.score - (delta * 1e-6),
+                    chunk_id=rec.get("chunk_id", ""),
+                    doc_id=rec.get("doc_id", ""),
+                    start_page=int(rec.get("start_page", 0)),
+                    end_page=int(rec.get("end_page", 0)),
+                    text=rec.get("text", ""),
+                )
+            )
+
+    return neighbors
 
 
 def select_evidence(hits: List[ChunkHit]) -> List[ChunkHit]:
@@ -64,13 +153,30 @@ def select_evidence(hits: List[ChunkHit]) -> List[ChunkHit]:
 
     ordered = sorted(best.values(), key=_stable_sort_key)
 
-    # Apply chunk count limit
-    ordered = ordered[: SETTINGS.ASK_MAX_CONTEXT_CHUNKS]
+    # Apply count limit to primary hits first.
+    primary_hits = ordered[: SETTINGS.ASK_MAX_CONTEXT_CHUNKS]
 
-    # Apply char budget (avoid huge algorithm blocks blowing context)
+    # Expand with immediate neighbors to reduce algorithm-boundary truncation.
+    expanded: List[ChunkHit] = []
+    seen_chunk_ids = set()
+    for h in primary_hits:
+        if h.chunk_id not in seen_chunk_ids:
+            expanded.append(h)
+            seen_chunk_ids.add(h.chunk_id)
+
+        if SETTINGS.ASK_INCLUDE_NEIGHBOR_CHUNKS:
+            for n in _neighbor_hits(h, SETTINGS.ASK_NEIGHBOR_WINDOW):
+                if n.chunk_id in seen_chunk_ids:
+                    continue
+                expanded.append(n)
+                seen_chunk_ids.add(n.chunk_id)
+
+    # Apply char budget + max context chunk cap.
     budgeted: List[ChunkHit] = []
     total = 0
-    for h in ordered:
+    for h in expanded:
+        if len(budgeted) >= SETTINGS.ASK_MAX_CONTEXT_CHUNKS:
+            break
         t = h.text or ""
         if not t.strip():
             continue

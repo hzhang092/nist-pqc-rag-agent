@@ -7,6 +7,7 @@ How to use (Python):
 
     retriever = BM25Retriever()  # expects data/processed/bm25.pkl
     hits = retriever.search("ML-KEM.KeyGen", k=5)
+    lexical = retriever.score_text("ML-KEM.KeyGen", "Algorithm 19 ML-KEM.KeyGen")
 
 Prerequisite:
     Build the artifact first with:
@@ -14,12 +15,17 @@ Prerequisite:
 
 Used by:
     - `rag.retrieve.hybrid_search` (lexical leg in hybrid retrieval)
+    - `rag.retrieve.rerank_fused_hits` (lightweight lexical rerank scoring)
     - `rag.retriever.factory.get_retriever` when backend=`bm25`
+
+Methods:
+    - search(query, k): returns top-k BM25 hits from indexed chunks.
+    - score_text(query, text): scores arbitrary text with BM25 statistics from index.
 """
 
 import math
 import pickle
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List
 
@@ -46,6 +52,31 @@ class BM25Retriever:
         self.idf: Dict[str, float] = artifact["idf"]
         self.postings = artifact["postings"]
         self.docs = artifact["docs"]
+
+    def score_text(self, query: str, text: str) -> float:
+        """Computes BM25-style lexical score of query against arbitrary text."""
+        q_terms = tokenize(query)
+        if not q_terms:
+            return 0.0
+
+        qtf = Counter(q_terms)
+        tf = Counter(tokenize(text or ""))
+        dl = sum(tf.values())
+        if dl <= 0:
+            return 0.0
+
+        score = 0.0
+        for term, q_weight in qtf.items():
+            term_tf = float(tf.get(term, 0))
+            if term_tf <= 0:
+                continue
+            idf = float(self.idf.get(term, 0.0))
+            if idf <= 0:
+                continue
+            denom = term_tf + self.k1 * (1.0 - self.b + self.b * (dl / max(self.avgdl, 1e-9)))
+            term_score = idf * ((term_tf * (self.k1 + 1.0)) / max(denom, 1e-9))
+            score += term_score * float(q_weight)
+        return float(score)
 
     def search(self, query: str, k: int = 5) -> List[ChunkHit]:
         q_terms = tokenize(query)

@@ -15,6 +15,33 @@ Key components:
   default values.
 - A `validate_settings` function to ensure that the configured values are
   valid and consistent.
+
+Environment variables (quick reference):
+
+Retrieval:
+- VECTOR_BACKEND (default: faiss): base-mode backend.
+- TOP_K (default: 8): final number of hits returned.
+- RETRIEVAL_MODE (default: hybrid): base or hybrid.
+- RETRIEVAL_QUERY_FUSION (default: true): enable deterministic query variants.
+- RETRIEVAL_RRF_K0 (default: 60): RRF constant in 1/(k0 + rank).
+- RETRIEVAL_CANDIDATE_MULTIPLIER (default: 4): candidate expansion factor before fusion.
+- RETRIEVAL_ENABLE_RERANK (default: true): enable lightweight lexical rerank.
+- RETRIEVAL_RERANK_POOL (default: 40): fused pool size considered before rerank truncation.
+
+Answering:
+- ASK_MAX_CONTEXT_CHUNKS (default: 6): max evidence chunks sent to generator.
+- ASK_MAX_CONTEXT_CHARS (default: 12000): max combined evidence text length.
+- ASK_MIN_EVIDENCE_HITS (default: 2): minimum hits required before answering.
+- ASK_REQUIRE_CITATIONS (default: true): enforce citation-required answer contract.
+- ASK_INCLUDE_NEIGHBOR_CHUNKS (default: true): include nearby chunks from same doc.
+- ASK_NEIGHBOR_WINDOW (default: 1): neighbor distance in vector_id space.
+
+CLI defaults:
+- ASK_SHOW_EVIDENCE_DEFAULT (default: false): default behavior for `rag.ask --show-evidence`.
+- ASK_JSON_DEFAULT (default: false): default behavior for `rag.ask --json`.
+
+LLM determinism:
+- LLM_TEMPERATURE (default: 0.0): generation temperature.
 """
 # rag/config.py
 from __future__ import annotations
@@ -69,6 +96,10 @@ class Settings:
     RETRIEVAL_RRF_K0: int = _env_int("RETRIEVAL_RRF_K0", 60)
     # Candidate expansion factor before fusion.
     RETRIEVAL_CANDIDATE_MULTIPLIER: int = _env_int("RETRIEVAL_CANDIDATE_MULTIPLIER", 4)
+    # Lightweight lexical rerank over fused candidates.
+    RETRIEVAL_ENABLE_RERANK: bool = _env_bool("RETRIEVAL_ENABLE_RERANK", True)
+    # Number of fused candidates to consider before rerank truncation.
+    RETRIEVAL_RERANK_POOL: int = _env_int("RETRIEVAL_RERANK_POOL", 40)
 
     # --- Answering / evidence policy ---
     # The maximum number of retrieved chunks to include in the context for the LLM.
@@ -81,6 +112,10 @@ class Settings:
     ASK_MIN_EVIDENCE_HITS: int = _env_int("ASK_MIN_EVIDENCE_HITS", 2)
     # If True, the model will be instructed to only use the provided citations.
     ASK_REQUIRE_CITATIONS: bool = _env_bool("ASK_REQUIRE_CITATIONS", True)
+    # Include adjacent chunks from the same document for algorithm spillover.
+    ASK_INCLUDE_NEIGHBOR_CHUNKS: bool = _env_bool("ASK_INCLUDE_NEIGHBOR_CHUNKS", True)
+    # Neighbor distance in vector_id space (1 means +/- 1).
+    ASK_NEIGHBOR_WINDOW: int = _env_int("ASK_NEIGHBOR_WINDOW", 1)
 
     # --- Debug / output ergonomics ---
     # Whether to show the retrieved evidence chunks by default when asking a question.
@@ -121,9 +156,13 @@ def validate_settings() -> None:
         raise ValueError("RETRIEVAL_RRF_K0 must be > 0")
     if SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER <= 0:
         raise ValueError("RETRIEVAL_CANDIDATE_MULTIPLIER must be > 0")
+    if SETTINGS.RETRIEVAL_RERANK_POOL <= 0:
+        raise ValueError("RETRIEVAL_RERANK_POOL must be > 0")
     if SETTINGS.ASK_MAX_CONTEXT_CHUNKS <= 0:
         raise ValueError("ASK_MAX_CONTEXT_CHUNKS must be > 0")
     if SETTINGS.ASK_MAX_CONTEXT_CHARS <= 0:
         raise ValueError("ASK_MAX_CONTEXT_CHARS must be > 0")
     if SETTINGS.ASK_MIN_EVIDENCE_HITS < 0:
         raise ValueError("ASK_MIN_EVIDENCE_HITS must be >= 0")
+    if SETTINGS.ASK_NEIGHBOR_WINDOW < 0:
+        raise ValueError("ASK_NEIGHBOR_WINDOW must be >= 0")

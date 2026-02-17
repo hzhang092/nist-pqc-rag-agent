@@ -26,6 +26,10 @@ Flags:
         Print retrieved evidence snippets before answer generation.
     --json
         Print machine-readable JSON output instead of formatted text.
+    --no-evidence
+        In --json mode, omit raw retrieved evidence from the payload.
+    --save-json PATH
+        In --json mode, also write the JSON payload to PATH.
     --k
         Override final number of retrieved hits.
     --backend
@@ -57,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from rag.config import SETTINGS, validate_settings
 from rag.llm.gemini import get_model_name, make_generate_fn
@@ -71,6 +76,17 @@ def _format_citations(result: AnswerResult) -> str:
     for c in result.citations:
         lines.append(f"[{c.key}] {c.doc_id} p{c.start_page}-p{c.end_page} chunk_id={c.chunk_id}")
     return "\n".join(lines)
+
+def _hit_to_dict(h) -> dict:
+    # Avoid relying on ChunkHit having a .to_dict() method
+    return {
+        "score": float(h.score),
+        "chunk_id": h.chunk_id,
+        "doc_id": h.doc_id,
+        "start_page": int(h.start_page),
+        "end_page": int(h.end_page),
+        "text": h.text,
+    }
 
 
 def main():
@@ -91,6 +107,17 @@ def main():
         action="store_true",
         default=SETTINGS.ASK_JSON_DEFAULT,
         help="Print output as JSON.",
+    )
+    parser.add_argument(
+        "--no-evidence",
+        action="store_true",
+        help="In --json mode, omit retrieved evidence from the output payload.",
+    )
+    parser.add_argument(
+        "--save-json",
+        type=str,
+        default=None,
+        help="If set, write the JSON payload to this path (in addition to printing).",
     )
     parser.add_argument("--k", type=int, default=None, help="Override TOP_K for this run.")
     parser.add_argument("--backend", type=str, default=None, help="Override VECTOR_BACKEND for this run.")
@@ -160,7 +187,23 @@ def main():
     if args.as_json:
         payload = result.to_dict()
         payload["model"] = model_name
+        payload["question"] = question
+        payload["retrieval"] = {
+            "mode": args.mode,
+            "backend": backend,
+            "k": k,
+            "query_fusion": (not args.no_query_fusion),
+            "candidate_multiplier": args.candidate_multiplier,
+            "k0": args.k0,
+            "rerank": (not args.no_rerank),
+            "rerank_pool": args.rerank_pool,
+        }
+        if not args.no_evidence:
+            payload["evidence"] = [_hit_to_dict(h) for h in hits]
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        if args.save_json:
+            Path(args.save_json).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.save_json).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return
 
     print("\n=== Answer ===")

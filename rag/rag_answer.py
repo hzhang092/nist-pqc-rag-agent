@@ -232,6 +232,7 @@ def build_cited_answer(
         f"3) If the evidence is insufficient, reply exactly: {REFUSAL_TEXT}\n"
         "4) Be concise and factual.\n\n"
         "5) NEVER hallucinate or use information not in the provided evidence.\n\n"
+        "6) Answer in 3–6 bullets, each bullet referencing exactly one chunk [c#]"
         f"Question:\n{question}\n\n"
         f"Evidence:\n{context}\n"
     )

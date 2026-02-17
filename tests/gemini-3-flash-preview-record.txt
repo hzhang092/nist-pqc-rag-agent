@@ -28,3 +28,39 @@ ML-KEM key generation is specified as Algorithm 19 (`ML-KEM.KeyGen`) in FIPS 203
 [c5] NIST.FIPS.203 p44-p44 chunk_id=NIST.FIPS.203::p0044::c001
 
 --------------------------------------
+
+
+=== Model ===
+gemini-3-flash-preview
+
+=== Evidence (top hits) ===
+01. score=0.7240 NIST.FIPS.203 p44-p44 chunk_id=NIST.FIPS.203::p0044::c000
+    7. The ML-KEM Key-Encapsulation Mechanism  This section describes the three main algorithms of the ML-KEM scheme:  1. Key generation (ML-KEM.KeyGen)  2. Encapsulation (ML-KEM.Encaps)  3. Decapsulation (ML-KEM.Decaps) To ...
+02. score=0.7199 NIST.SP.800-227 p43-p43 chunk_id=NIST.SP.800-227::p0043::c001
+    5.1.3. ML-KEM ML-KEM is a high-performance, general-purpose, lattice-based key-encapsulation mechanism. It is a NIST-approved KEM and was standardized in FIPS 203 [3]. ML-KEM is based on CRYSTALS-Kyber [26], which was a ...
+03. score=0.7119 NIST.FIPS.203 p10-p10 chunk_id=NIST.FIPS.203::p0010::c000
+    1. Introduction  1.1 Purpose and Scope This standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM). A key-encapsulation mechanism (KEM) is a set of algorithms that can be used to establish a sha...
+04. score=0.7073 NIST.FIPS.203 p46-p46 chunk_id=NIST.FIPS.203::p0046::c000
+    nor with every execution of ML-KEM.Encaps. Instead, assurance that these checks have been performed can be acquired through other means (see SP 800-227 [1]).  Algorithm 20 ML-KEM.Encaps(ek) Uses the encapsulation key to ...
+05. score=0.7006 NIST.FIPS.203 p48-p48 chunk_id=NIST.FIPS.203::p0048::c001
+    Table 2. Approved parameter sets for ML-KEM  n q k η1 η2 du dv required RBG strength (bits) ML-KEM-512 256 3329 2 3 2 10 4 128 ML-KEM-768 256 3329 3 2 2 10 4 192 ML-KEM-1024 256 3329 4 2 2 11 5 256  Table 3. Sizes (in by...
+07. score=0.6908 NIST.FIPS.203 p23-p23 chunk_id=NIST.FIPS.203::p0023::c002
+    Parameter sets and algorithms. Recall that a KEM consists of algorithms KeyGen, Encaps, and Decaps, along with a collection of parameter sets. In the case of ML-KEM, the three aforementioned algorithms are: 1. ML-KEM.Key...
+08. score=0.6905 NIST.FIPS.203 p24-p24 chunk_id=NIST.FIPS.203::p0024::c001
+    Parameter set Decapsulation failure rate ML-KEM-512 2−138.8 ML-KEM-768 2−164.8 ML-KEM-1024 2−174.8  Terminology for keys. A KEM involves three different types of keys: encapsulation keys, decapsulation keys, and shared s...
+
+=== Answer ===
+* ML-KEM is a Module-Lattice-Based Key-Encapsulation Mechanism used to establish a shared secret key between two parties communicating over a public channel [c3].
+* It is a high-performance, general-purpose mechanism based on CRYSTALS-Kyber with theoretical security derived from the presumed hardness of the Module Learning with Errors (MLWE) problem [c2].
+* The scheme is composed of three primary algorithms: key generation (ML-KEM.KeyGen), encapsulation (ML-KEM.Encaps), and decapsulation (ML-KEM.Decaps) [c1].
+* The mechanism utilizes three specific parameter sets—ML-KEM-512, ML-KEM-768, and ML-KEM-1024—to provide different trade-offs between security strength and performance [c5].
+* The encapsulation algorithm uses an encapsulation key to generate a shared secret key and an associated ciphertext [c4].
+* The encapsulation algorithm requires input checking to ensure the encapsulation key is a valid length and that encoded integers are within the valid range [c6].
+
+=== Citations ===
+[c1] NIST.FIPS.203 p44-p44 chunk_id=NIST.FIPS.203::p0044::c000
+[c2] NIST.SP.800-227 p43-p43 chunk_id=NIST.SP.800-227::p0043::c001
+[c3] NIST.FIPS.203 p10-p10 chunk_id=NIST.FIPS.203::p0010::c000
+[c4] NIST.FIPS.203 p46-p46 chunk_id=NIST.FIPS.203::p0046::c000
+[c5] NIST.FIPS.203 p48-p48 chunk_id=NIST.FIPS.203::p0048::c001
+[c6] NIST.FIPS.203 p45-p45 chunk_id=NIST.FIPS.203::p0045::c001

@@ -61,6 +61,129 @@ Outputs:
 - reports/mini_retrieval_sanity.json
 - reports/mini_retrieval_sanity.md
 
+## Scripts reference
+
+This section documents the runnable scripts/modules, what each one is for, and available flags.
+
+### `scripts/clean_pages.py`
+
+Purpose:
+- Cleans `data/processed/pages.jsonl` into `data/processed/pages_clean.jsonl` using `rag.clean`.
+- Applies header/footer removal, boilerplate filtering, and wrapped-line joining.
+
+Run:
+
+```powershell
+python scripts/clean_pages.py
+```
+
+Flags:
+- No CLI flags in this script.
+- To change behavior, edit constants/config inside the file (`PAGES_IN`, `PAGES_OUT`, `CleanConfig`).
+
+---
+
+### `scripts/make_chunks.py`
+
+Purpose:
+- Builds chunked retrieval units from cleaned pages.
+- Reads `data/processed/pages_clean.jsonl` and writes `data/processed/chunks.jsonl` via `rag.chunk.run_chunking_per_page`.
+
+Run:
+
+```powershell
+python scripts/make_chunks.py
+```
+
+Flags:
+- No CLI flags in this script.
+- To change behavior, edit `ChunkConfig(...)` in the file.
+
+---
+
+### `scripts/mini_retrieval_sanity.py`
+
+Purpose:
+- Runs a small fixed query set to compare retrieval quality for:
+	- base vector retrieval (`mode=base`, `backend=faiss`, no fusion), and
+	- hybrid retrieval (`mode=hybrid`, fusion enabled).
+- Produces quick qualitative reports for tuning sanity checks.
+
+Run:
+
+```powershell
+python scripts/mini_retrieval_sanity.py
+```
+
+Outputs:
+- `reports/mini_retrieval_sanity.json`
+- `reports/mini_retrieval_sanity.md`
+
+Flags:
+- No CLI flags in this script.
+- To change query set, edit `QUERIES` in the file.
+
+---
+
+### `eval/day2/run.py`
+
+Purpose:
+- Runs retrieval evaluation over `eval/day2/questions.jsonl`.
+- Computes `Recall@k`, `MRR@k`, and `nDCG@k`.
+- Writes per-question and summary reports.
+
+Run:
+
+```powershell
+python -m eval.day2.run
+```
+
+Outputs (default):
+- `eval/day2/reports/summary.json`
+- `eval/day2/reports/per_question.json`
+
+Flags:
+- No CLI flags currently.
+- `main(...)` supports parameters programmatically:
+	- `config_path` (retrieval config JSON)
+	- `qpath` (questions JSONL)
+	- `outdir` (report output directory)
+
+---
+
+### `eval/day2/ablate.py`
+
+Purpose:
+- Runs a batch of ablation variants from a baseline retrieval config.
+- Executes eval per variant using `eval.day2.run.main(...)`.
+- Produces per-variant folders plus combined CSV leaderboard.
+
+Run:
+
+```powershell
+python -m eval.day2.ablate
+```
+
+Flags:
+- `--baseline` (default: `eval/day2/baselines/day2_hybrid.json`)
+	- Baseline config JSON used to generate variants.
+- `--qpath` (default: `eval/day2/questions.jsonl`)
+	- Evaluation question set.
+- `--outroot` (default: `eval/day2/ablations`)
+	- Root folder where run outputs are written.
+- `--run-name` (default: timestamp)
+	- Optional custom name for the run folder.
+- `--stop-on-error` (flag)
+	- Stop immediately if any variant fails.
+- `--keep-old` (flag)
+	- Keep existing run directory instead of deleting/recreating it.
+
+Outputs:
+- `<outroot>/<run-name>/results.csv`
+- `<outroot>/<run-name>/errors.json` (only if failures occur)
+- `<outroot>/<run-name>/<variant_name>/summary.json`
+- `<outroot>/<run-name>/<variant_name>/per_question.json`
+
 ### Script/module dependency map
 
 - rag.search uses rag.retrieve.retrieve

@@ -67,6 +67,38 @@ This is the core Day 2 engine.
 
 ---
 
+
+---
+
+### 3.1) Bugfix: “Algorithm N” questions refusing despite correct evidence (SHAKE128example)
+
+**Repro / symptom**
+
+A concrete failure showed up with algorithm-style questions, e.g.:
+
+- `python -m rag.ask "What are the steps in Algorithm 2 SHAKE128?" --k 5 --show-evidence`
+
+Retrieval **did return** the correct chunk (`NIST.FIPS.203::p0028::c001`) containing the full Algorithm 2 pseudocode, but the system could still refuse with the fixed contract (`"not found in provided docs"`). This was initially confusing because `--show-evidence` truncates each chunk for readability, so the “top hits” preview didn’t visibly include the numbered steps even when the full chunk did.
+
+**Debugging instrumentation added**
+
+- Printed the **actual context block** sent to the LLM (the `[c1] …` evidence payload). This confirmed that the “retriever hits” list and the “context to LLM” list can differ because `select_evidence()` applies **dedup + neighbor expansion + context budgeting** (expected behavior).
+- Printed **RAW model output** + parsed citation keys + validated keys to confirm whether the refusal was coming from retrieval, the model, or the validator.
+
+**Root cause**
+
+In `rag_answer.py`, the prompt assembly had a formatting bug: the Rule 6 line was concatenated directly into `Question:` (missing a newline), which reduced compliance with the citation/answering rules and increased refusals/low-quality outputs for algorithm-heavy evidence.
+
+**Fix shipped**
+
+Updated `rag/rag_answer.py` to make algorithm answers reliable:
+
+- Fixed prompt formatting (explicit newline separation before `Question:`).
+- Added evidence prettification for standards pseudocode (insert newlines before `1:`, `2:`, `for (...)` etc.) so algorithm steps are readable to the model.
+- Added a deterministic safety net for Algorithm questions: if the model refuses but the evidence chunk contains numbered steps, extract and return the steps directly **with valid inline citations**, still passing the strict `enforce_inline_citations` contract.
+
+This turns “algorithm blocks + PDF layout weirdness” into a stable, testable path rather than a prompt-luck issue.
+
 ### 4) Gemini LLM integration (free tier) in `rag/llm/gemini.py`
 I integrated Gemini via the `google-genai` SDK and set the default model to:
 

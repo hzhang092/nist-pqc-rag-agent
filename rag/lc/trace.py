@@ -1,3 +1,19 @@
+"""
+Trace utilities for LangGraph agent runs.
+
+What this module is for:
+- Provides functions to serialize and save the final `AgentState` to JSON.
+- Ensures evidence text is truncated for readability in trace files.
+- Generates trace filenames based on question slug and timestamp.
+
+How it is used:
+- Called by `rag.agent.ask` to save trace artifacts after agent execution.
+- Used internally by LangGraph workflows to debug and evaluate agent behavior.
+
+CLI flags:
+- None. This is a library module (non-CLI) and is not executed via command-line flags.
+"""
+
 # rag/lc/trace.py
 from __future__ import annotations
 

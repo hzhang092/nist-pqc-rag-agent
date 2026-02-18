@@ -1,3 +1,20 @@
+"""
+LangGraph agent state definitions.
+
+What this module is for:
+- Defines the `AgentState` structure used by the LangGraph agent.
+- Provides dataclasses for evidence items, citations, and routing plans.
+- Supports serialization of state components for debugging and trace output.
+
+How it is used:
+- Imported by `rag.lc.graph` to define and manipulate agent state during execution.
+- Used by `state_utils` to initialize and update state consistently.
+- Enables structured debugging and evaluation via traceable state fields.
+
+CLI flags:
+- None. This is a library module (non-CLI) and is not executed via command-line flags.
+"""
+
 # rag/lc/state.py
 from __future__ import annotations
 

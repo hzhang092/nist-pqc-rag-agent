@@ -1,3 +1,48 @@
+"""
+This module defines tools for evidence retrieval, comparison, and summarization in the context of a LangChain-based RAG system.
+
+Tools:
+- `retrieve`: Retrieves evidence chunks for a query using hybrid retrieval and fusion. Supports optional reranking if enabled in the pipeline.
+  Flags:
+    - `query` (str): The query string to retrieve evidence for.
+    - `k` (int): The number of top evidence chunks to retrieve (default: 8).
+    - `doc_id` (Optional[str]): Restrict retrieval to a specific document ID (default: None).
+
+- `resolve_definition`: Forces a definitions/notation-oriented retrieval pass for a term or symbol.
+  Flags:
+    - `term` (str): The term or symbol to retrieve definitions for.
+    - `k` (int): The number of top evidence chunks to retrieve (default: 8).
+    - `doc_id` (Optional[str]): Restrict retrieval to a specific document ID (default: None).
+
+- `compare`: Retrieves evidence for two topics and merges/deduplicates the results.
+  Flags:
+    - `topic_a` (str): The first topic to compare.
+    - `topic_b` (str): The second topic to compare.
+    - `k` (int): The number of top evidence chunks to retrieve for each topic (default: 6).
+
+- `summarize`: Fetches chunks overlapping a document page range and returns them as evidence for a grounded summary.
+  Flags:
+    - `doc_id` (str): The document ID to summarize.
+    - `start_page` (int): The starting page number of the range.
+    - `end_page` (int): The ending page number of the range.
+    - `k` (int): The maximum number of evidence chunks to return (default: 30).
+
+Helper Functions:
+- `_load_chunks_meta`: Loads chunk metadata from the `chunks.jsonl` file.
+- `_chunks_for_doc_pages`: Retrieves chunks overlapping a specific document page range.
+- `_call_with_flexible_signature`: Calls a function with only the parameters it accepts.
+- `_find_retrieve_entrypoint`: Finds the retrieval entrypoint function in the repository.
+- `_normalize_hit`: Normalizes a ChunkHit-like object or dictionary to an `EvidenceItem`.
+- `_run_retrieve`: Executes the retrieval process and returns evidence items.
+- `_dedupe_evidence`: Deduplicates evidence items based on chunk IDs.
+- `_mode_hint_from_query`: Infers a mode hint from the query string.
+
+Notes:
+- This module relies on the `langchain_core.tools` library for defining tools.
+- Evidence items are represented using the `EvidenceItem` dataclass from the `state` module.
+- Retrieval entrypoints and chunk metadata are dynamically loaded to ensure flexibility.
+"""
+
 # rag/lc/tools.py
 from __future__ import annotations
 

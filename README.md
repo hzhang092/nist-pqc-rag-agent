@@ -49,6 +49,8 @@ python -m rag.retrieve "SLH-DSA parameters" --no-query-fusion
 python -m rag.ask "What does FIPS 203 specify for ML-KEM key generation?"
 python -m rag.ask "Compare ML-DSA and SLH-DSA use-cases" --show-evidence
 python -m rag.ask "What is Algorithm 19?" --mode hybrid --k 8 --json
+python -m rag.ask "What is Algorithm 19?" --json --no-evidence
+python -m rag.ask "What is Algorithm 19?" --json --save-json reports/ask_algorithm19.json
 ```
 
 ### 5) Run retrieval sanity script
@@ -125,6 +127,81 @@ Flags:
 
 ---
 
+### `rag/agent/ask.py` (LangGraph agent CLI)
+
+Purpose:
+- Runs the bounded tool-using LangGraph agent for one question.
+- Uses routing + retrieval tools + citation-grounded answer generation.
+- Optionally writes a trace JSON artifact for debugging and evaluation runs.
+
+Run:
+
+```powershell
+python -m rag.agent.ask "What are the steps in Algorithm 2 SHAKE128?"
+```
+
+Flags:
+- `question` (positional)
+	- User question string sent to the agent.
+- `--no-trace`
+	- Disable writing trace JSON to disk.
+- `--out-dir` (default: `runs/agent`)
+	- Trace output directory when tracing is enabled.
+- `--json`
+	- Print full `AgentState` JSON to stdout instead of formatted answer/citations.
+
+Outputs:
+- Stdout answer + citations (default), or full JSON state with `--json`.
+- Trace file in `<out-dir>/agent_<timestamp>_<slug>.json` (unless `--no-trace`).
+
+Examples:
+
+```powershell
+python -m rag.agent.ask "What is ML-KEM?"
+python -m rag.agent.ask "Compare ML-DSA and SLH-DSA" --json
+python -m rag.agent.ask "ML-KEM key generation" --out-dir runs/agent/day3
+python -m rag.agent.ask "What is Algorithm 19?" --no-trace
+```
+
+### Agent trace JSON fields
+
+Trace files are produced by `rag.lc.trace.write_trace(...)` and serialize the final `AgentState`.
+
+Typical top-level fields:
+- `question`: original user query.
+- `plan`: router decision object (action, reason, optional args/mode hint).
+- `evidence`: retrieved evidence items used by the answer step.
+	- item shape: `score`, `chunk_id`, `doc_id`, `start_page`, `end_page`, `text`.
+- `draft_answer`: final answer text (or refusal text).
+- `citations`: citation list used to ground factual claims.
+	- item shape: `doc_id`, `start_page`, `end_page`, `chunk_id`.
+- `tool_calls`: number of tool-node executions.
+- `steps`: total graph step count.
+- `trace`: debug/provenance events recorded across nodes.
+- `errors`: optional list of error strings.
+
+Trace file naming:
+- `<out-dir>/agent_<YYYYMMDD_HHMMSS>_<question_slug>.json`
+
+Evidence truncation behavior:
+- For readability, long evidence `text` values are truncated in trace output.
+- Default limit is 800 characters per evidence item, followed by `…(truncated)`.
+
+### `rag/lc/state_utils.py` (internal state helper module)
+
+Purpose:
+- Initializes and updates LangGraph `AgentState` in a consistent way.
+- Centralizes trace event recording for plan, evidence, and answer steps.
+- Reduces graph-node duplication by keeping state mutation helpers in one module.
+
+Run:
+- This is an internal library module; it is imported by graph code and not run directly.
+
+Flags:
+- No CLI flags available.
+
+---
+
 ### `eval/day2/run.py`
 
 Purpose:
@@ -188,13 +265,14 @@ Outputs:
 
 - rag.search uses rag.retrieve.retrieve
 - rag.ask uses rag.retrieve.retrieve and rag.rag_answer.build_cited_answer
+- rag.agent.ask uses rag.lc.graph.run_agent and rag.lc.trace.write_trace
 - rag.retrieve uses rag.retriever.factory.get_retriever and rag.retriever.bm25_retriever.BM25Retriever
 - rag.retriever.bm25_retriever depends on artifact from rag.index_bm25
 
 ## Retrieval tuning playbook (algorithm-heavy PDFs)
 
 Core retrieval flags are shared by `rag.search`, `rag.retrieve`, and `rag.ask`.
-Output flags (`--show-evidence`, `--json`) are `rag.ask`-only.
+Answer/output flags (`--show-evidence`, `--json`, `--no-evidence`, `--save-json`) are `rag.ask`-only.
 
 ### Flag meanings
 
@@ -236,12 +314,33 @@ Output flags (`--show-evidence`, `--json`) are `rag.ask`-only.
 - `--json` (`rag.ask` only)
 	- Emits structured JSON with answer, citations, and model metadata.
 
+- `--no-evidence` (`rag.ask` only; used with `--json`)
+	- Omits the `evidence` array from JSON output.
+	- Useful for smaller payloads when you only need answer + citations + retrieval settings.
+
+- `--save-json PATH` (`rag.ask` only)
+	- Writes the JSON payload to a file path (directories auto-created) in addition to printing JSON.
+	- Best paired with `--json` for experiment logs or reproducible QA artifacts.
+
 ### See all flags quickly
 
 ```powershell
 python -m rag.search --help
 python -m rag.retrieve --help
 python -m rag.ask --help
+```
+
+### `rag.ask` JSON output patterns
+
+```powershell
+# Include evidence in JSON (default behavior in --json mode)
+python -m rag.ask "ML-KEM.Decaps summary" --json
+
+# Exclude evidence for a lighter payload
+python -m rag.ask "ML-KEM.Decaps summary" --json --no-evidence
+
+# Save JSON artifact for reports / downstream checks
+python -m rag.ask "ML-KEM.Decaps summary" --json --save-json reports/ask_mlkem_decaps.json
 ```
 
 ## Environment variable reference

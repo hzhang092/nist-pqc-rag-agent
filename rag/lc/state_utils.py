@@ -1,3 +1,18 @@
+"""
+LangGraph AgentState helper utilities.
+
+What this module is for:
+- Initializes the agent state used by the LangGraph workflow.
+- Provides small, deterministic state mutation helpers for plan/evidence/answer updates.
+- Appends trace events consistently so downstream trace JSON is easy to inspect.
+
+How it is used:
+- Called by graph nodes in rag.lc.graph to update AgentState in one place.
+- Keeps state-shape logic centralized and avoids duplicated mutation code.
+
+CLI flags:
+- None. This is a library module (non-CLI) and is not executed via command-line flags.
+"""
 # rag/lc/state_utils.py
 from __future__ import annotations
 from typing import Any, Dict, List, Optional

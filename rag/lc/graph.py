@@ -1,3 +1,20 @@
+"""
+LangGraph agent graph definition and execution.
+
+What this module is for:
+- Defines the LangGraph state machine (`StateGraph`) for bounded agent execution.
+- Implements graph nodes for routing, tool execution, answer generation, and verification.
+- Enforces step and tool-call budgets to prevent runaway execution.
+
+How it is used:
+- Imported by `rag.agent.ask` to execute the agent graph for a user question.
+- Nodes call helper functions from `state_utils` to update `AgentState` consistently.
+- Supports debugging and evaluation via trace events added at each step.
+
+CLI flags:
+- None. This is a library module (non-CLI) and is not executed via command-line flags.
+"""
+
 # rag/lc/graph.py
 from __future__ import annotations
 

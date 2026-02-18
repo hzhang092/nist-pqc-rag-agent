@@ -35,7 +35,7 @@ from rag.lc.trace import write_trace
 
 
 def _print_answer(state: Dict[str, Any]) -> None:
-    ans = (state.get("draft_answer") or "").strip()
+    ans = (state.get("final_answer") or state.get("draft_answer") or "").strip()
     print(ans)
     print()
 
@@ -43,11 +43,13 @@ def _print_answer(state: Dict[str, Any]) -> None:
     if cits:
         print("Citations:")
         for c in cits:
+            key = c.get("key")
             doc = c.get("doc_id")
             sp = c.get("start_page")
             ep = c.get("end_page")
             cid = c.get("chunk_id", "")
-            print(f"- {doc} p{sp}–{ep} (chunk={cid})")
+            prefix = f"[{key}] " if key else ""
+            print(f"- {prefix}{doc} p{sp}–{ep} (chunk={cid})")
     else:
         print("Citations: (none)")
 

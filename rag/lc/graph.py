@@ -18,14 +18,13 @@ CLI flags:
 # rag/lc/graph.py
 from __future__ import annotations
 
-import importlib
-import inspect
+import re
 from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END
 
 from .state import AgentState, Plan, EvidenceItem, Citation
-from .state_utils import init_state, add_trace, set_plan, set_evidence, set_answer
+from .state_utils import init_state, add_trace, set_plan, set_evidence, set_answer, set_final_answer
 from . import tools as lc_tools
 
 
@@ -46,14 +45,53 @@ def _budget_exceeded(state: AgentState) -> bool:
     return int(state.get("steps", 0)) >= MAX_STEPS or int(state.get("tool_calls", 0)) >= MAX_TOOL_CALLS
 
 
+def _clean_topic_text(text: str) -> str:
+    return text.strip().strip(" .,:;\"'`[](){}")
+
+
+def _extract_compare_topics(question: str) -> tuple[Optional[str], Optional[str]]:
+    q = question.strip().rstrip("?").strip()
+    if not q:
+        return None, None
+
+    patterns = [
+        re.compile(r"(?:differences?|difference)\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+)$", flags=re.IGNORECASE),
+        re.compile(r"(?:compare|comparison\s+of)\s+(?P<a>.+?)\s+(?:and|vs|versus)\s+(?P<b>.+)$", flags=re.IGNORECASE),
+        re.compile(r"(?P<a>.+?)\s+(?:vs|versus)\s+(?P<b>.+)$", flags=re.IGNORECASE),
+    ]
+
+    for pattern in patterns:
+        m = pattern.search(q)
+        if not m:
+            continue
+        topic_a = _clean_topic_text(m.group("a"))
+        topic_b = _clean_topic_text(m.group("b"))
+        if topic_a and topic_b and topic_a.lower() != topic_b.lower():
+            return topic_a, topic_b
+
+    return None, None
+
+
 def _heuristic_route(question: str) -> Plan:
     q = question.strip()
     ql = q.lower()
 
     # Compare intent
-    if any(x in ql for x in ["compare", "difference between", "vs", "versus"]):
-        # Try to split "A vs B" crudely; graph can evolve later
-        return Plan(action="compare", reason="Comparison intent detected.", args={"topic_a": q, "topic_b": q}, mode_hint="general")
+    if any(x in ql for x in ["compare", "difference between", "differences between", "vs", "versus"]):
+        topic_a, topic_b = _extract_compare_topics(q)
+        if topic_a and topic_b:
+            return Plan(
+                action="compare",
+                reason="Comparison intent detected with parsed topics.",
+                args={"topic_a": topic_a, "topic_b": topic_b},
+                mode_hint="general",
+            )
+        return Plan(
+            action="retrieve",
+            reason="Comparison intent detected but topics were ambiguous; using broad retrieval.",
+            query=q,
+            mode_hint="general",
+        )
 
     # Algorithm intent (your SHAKE128 questions)
     if "algorithm" in ql or "shake" in ql:
@@ -169,7 +207,7 @@ def node_do_tool(state: AgentState) -> AgentState:
         tool_out = lc_tools.resolve_definition.invoke({"term": args.get("term", state["question"]), "k": 8})
     elif action == "compare":
         args = plan.get("args", {}) or {}
-        # If router didn’t extract topics, pass question as both; you can improve later
+        # Defensive fallback for manually-crafted state; routed compare plans should include parsed topics.
         tool_out = lc_tools.compare.invoke({
             "topic_a": args.get("topic_a", state["question"]),
             "topic_b": args.get("topic_b", state["question"]),
@@ -211,11 +249,13 @@ def node_answer(state: AgentState) -> AgentState:
     # Convert to your lc/state.Citation objects
     cits: list[Citation] = []
     for c in out.get("citations", []) or []:
+        key = c.get("key")
         cits.append(Citation(
             doc_id=str(c["doc_id"]),
             start_page=int(c["start_page"]),
             end_page=int(c["end_page"]),
             chunk_id=str(c.get("chunk_id", "")),
+            key=(str(key) if key is not None and str(key).strip() else None),
         ))
 
     set_answer(state, answer_text, cits)
@@ -230,15 +270,21 @@ def node_verify_or_refuse(state: AgentState) -> AgentState:
 
     # Hard rule: any non-refusal answer must have citations
     draft = (state.get("draft_answer") or "").strip()
-    is_refusal = "couldn’t find supporting evidence" in draft.lower() or "could not find" in draft.lower()
+    dl = draft.lower()
+    is_refusal = (
+        "couldn’t find supporting evidence" in dl
+        or "could not find" in dl
+        or "not found in provided docs" in dl
+    )
 
     if not is_refusal and (not evidence or len(citations) == 0):
         msg = "I don’t have enough citable evidence in the indexed NIST documents to answer that reliably."
-        state["draft_answer"] = msg
         state["citations"] = []
+        set_final_answer(state, msg)
         add_trace(state, {"type": "verify", "result": "refuse_no_citations"})
         return state
 
+    set_final_answer(state, draft)
     add_trace(state, {"type": "verify", "result": "ok", "citations": len(citations)})
     return state
 

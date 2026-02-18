@@ -45,6 +45,7 @@ class Citation:
     start_page: int
     end_page: int
     chunk_id: str
+    key: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -106,6 +107,7 @@ class AgentState(TypedDict, total=False):
     # Evidence + generation
     evidence: List[Dict[str, Any]]     # EvidenceItem.to_dict()
     draft_answer: str
+    final_answer: str
     citations: List[Dict[str, Any]]    # Citation.to_dict()
 
     # Budgets / counters

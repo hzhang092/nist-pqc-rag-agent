@@ -23,6 +23,7 @@ def init_state(question: str) -> AgentState:
         "question": question,
         "evidence": [],
         "citations": [],
+        "final_answer": "",
         "tool_calls": 0,
         "steps": 0,
         "trace": [],
@@ -44,3 +45,8 @@ def set_answer(state: AgentState, answer: str, citations: List[Citation]) -> Non
     state["draft_answer"] = answer
     state["citations"] = [c.to_dict() for c in citations]
     add_trace(state, {"type": "answer", "citations": len(citations)})
+
+
+def set_final_answer(state: AgentState, answer: str) -> None:
+    state["final_answer"] = answer
+    add_trace(state, {"type": "final_answer"})

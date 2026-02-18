@@ -1,0 +1,161 @@
+{
+  "question": "What are the differences between ML-KEM and ML-DSA",
+  "plan": {
+    "action": "retrieve",
+    "reason": "Default to retrieval.",
+    "query": "What are the differences between ML-KEM and ML-DSA",
+    "args": {},
+    "mode_hint": "general"
+  },
+  "evidence": [
+    {
+      "score": 0.048171500630517027,
+      "chunk_id": "NIST.FIPS.204::p0064::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "text": "Appendix D — Differences from the CRYSTALS-DILITHIUM Submission\n\nML-DSA is derived from Version 3.1 of CRYSTALS-DILITHIUM [6]. Version 3.1 differs slightly from the most\nrecent version that appears on the NIST website (i.e., Version 3 CRYSTALS-DILITHIUM [5]). Appendices D.1,\nD.2, and D.3 document the differences between Versions 3 and 3.1, the differences between Version 3.1 and the initial public draft of the ML-DSA, and the differences between the initial public draft and the ML-DSA standard as published in this document, respectively.\n\nD.1 Differences Between Version 3.1 and the Round 3 Version of CRYSTALS- DILITHIUM The lengths of the variables ρ′ (private random seed) and μ (message representative) in the signing algorithm were increased from 384 to 512 bits. The increase in the lengt…(truncated)"
+    },
+    {
+      "score": 0.028949545078577336,
+      "chunk_id": "NIST.FIPS.204::p0064::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "text": "D.1 Differences Between Version 3.1 and the Round 3 Version of CRYSTALS- DILITHIUM The lengths of the variables ρ′ (private random seed) and μ (message representative) in the signing algorithm were increased from 384 to 512 bits. The increase in the length of μ corrects a security flaw that appeared in the third-round submission, where a collision attack against SHAKE256 with a 384-bit\noutput would make it so that parameters targeting NIST security strength category 5 could only meet\ncategory 4 [32].\nAdditionally, the length of the variable tr (the hash of the public key) was reduced from 384 to 256 bits.\nIn key generation, the variable ς was relabeled as ρ′ and increased in size from 256 bits to 512 bits.\n\nD.2 Differences Between Version 3.1 of CRYSTALS-DILITHIUM and FIPS 204 Initial Publ…(truncated)"
+    },
+    {
+      "score": 0.015873015873015872,
+      "chunk_id": "NIST.FIPS.203::p0008::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 8,
+      "end_page": 8,
+      "text": "4.3.1 Multiplication in the NTT Domain 27\n\n5 The K-PKE Component Scheme 28\n 5.1 K-PKE Key Generation 28\n 5.2 K-PKE Encryption 29\n 5.3 K-PKE Decryption 31\n\n6 Main Internal Algorithms 32\n 6.1 Internal Key Generation 32\n 6.2 Internal Encapsulation 32\n 6.3 Internal Decapsulation 33\n\n7 The ML-KEM Key-Encapsulation Mechanism 35\n 7.1 ML-KEM Key Generation 35\n 7.2 ML-KEM Encapsulation 36\n 7.3 ML-KEM Decapsulation 37\n\n8 Parameter Sets 39\n\nReferences 41\n\nAppendix A — Precomputed Values for the NTT 44\n\nAppendix B — SampleNTT Loop Bounds 46\n\nAppendix C — Differences From the CRYSTALS-KYBER Submission 47 C.1 Differences Between CRYSTALS-KYBER and FIPS 203 Initial Public Draft 47 C.2 Changes From FIPS 203 Initial Public Draft 47\n\nv"
+    },
+    {
+      "score": 0.015625,
+      "chunk_id": "NIST.FIPS.203::p0056::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 56,
+      "end_page": 56,
+      "text": "This appendix lists the differences between CRYSTALS-KYBER (as described in [4]) and the ML-KEM\nscheme (specified in this document) that result in differing input-output behavior of the main algorithms (i.e., KeyGen, Encaps, Decaps). Since a conforming implementation need only match the input-output behavior of these three algorithms (see “Implementations” and Section 3.3 below), the list does not include any of the numerous differences in how the main algorithms actually produce outputs from inputs (e.g., via different computational steps or different subroutines),\nnor any differences in presentation between this standard and [4].\n\nC.1 Differences Between CRYSTALS-Kyber and FIPS 203 Initial Public Draft • In the third-round specification [4], the shared secret key was treated as a variabl…(truncated)"
+    },
+    {
+      "score": 0.0315136476426799,
+      "chunk_id": "NIST.FIPS.203::p0056::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 56,
+      "end_page": 56,
+      "text": "Appendix C — Differences From the CRYSTALS-Kyber Submission\n\nThis appendix lists the differences between CRYSTALS-KYBER (as described in [4]) and the ML-KEM\nscheme (specified in this document) that result in differing input-output behavior of the main algorithms (i.e., KeyGen, Encaps, Decaps). Since a conforming implementation need only match the input-output behavior of these three algorithms (see “Implementations” and Section 3.3 below), the list does not include any of the numerous differences in how the main algorithms actually produce outputs from inputs (e.g., via different computational steps or different subroutines),\nnor any differences in presentation between this standard and [4]."
+    },
+    {
+      "score": 0.02749719416386083,
+      "chunk_id": "NIST.FIPS.203::p0010::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "text": "1. Introduction\n\n1.1 Purpose and Scope\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM). A key-encapsulation mechanism (KEM) is a set of algorithms that can be used to establish a shared secret key between two parties communicating over a public channel. A KEM is a particular type of key establishment scheme. Other NIST-approved key establishment schemes are specified in NIST Special Publication (SP) 800-56A, Recommendation for Pair-Wise Key-Establishment\nSchemes Using Discrete Logarithm-Based Cryptography [2], and SP 800-56B, Recommendation\nfor Pair-Wise Key Establishment Schemes Using Integer Factorization Cryptography [3].\nThe key establishment schemes specified in SP 800-56A and SP 800-56B are vulnerable to attacks that use sufficiently-capable quan…(truncated)"
+    },
+    {
+      "score": 0.014925373134328358,
+      "chunk_id": "NIST.FIPS.203::p0056::c002",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 56,
+      "end_page": 56,
+      "text": "C.1 Differences Between CRYSTALS-Kyber and FIPS 203 Initial Public Draft • In the third-round specification [4], the shared secret key was treated as a variable-length value whose length depended on how it would be used in the relevant application. In this specification, the length of the shared secret key is fixed to 256 bits. It can be used directly in applications as a symmetric key, or symmetric keys can be derived from it, as specified in Section 3.3. • The ML-KEM.Encaps and ML-KEM.Decaps algorithms in this specification use a different variant of the Fujisaki-Okamoto transform (see [24, 25]) than the third-round specifica- tion [4]. Specifically, ML-KEM.Encaps no longer includes a hash of the ciphertext in the derivation of the shared secret, and ML-KEM.Decaps has been adjusted to ma…(truncated)"
+    },
+    {
+      "score": 0.030090497737556562,
+      "chunk_id": "NIST.FIPS.204::p0064::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "text": "D.2 Differences Between Version 3.1 of CRYSTALS-DILITHIUM and FIPS 204 Initial Public Draft\nIn order to ensure the properties noted in [14], ML-DSA increases the length of tr to 512 bits and increases\nthe length of c to 384 and 512 bits for the parameter sets ML-DSA-65 and ML-DSA-87, respectively. In draft ML-DSA, only the first 256 bits of c are used in the generation of c.\nIn Version 3.1 of the CRYSTALS-DILITHIUM submission, the default version of the signing algorithm is deterministic with ρ′ being generated pseudorandomly from the signer’s private key and the message, and an optional version of the signing algorithm has ρ′ sampled instead as a 512-bit random string. In ML-DSA, ρ′ is generated by a “hedged” procedure in which ρ′ is pseudorandomly derived from the signer’s private key, t…(truncated)"
+    }
+  ],
+  "draft_answer": "* ML-DSA is a scheme derived from CRYSTALS-DILITHIUM that utilizes a signing algorithm [c1].\n* ML-KEM is a scheme derived from CRYSTALS-KYBER that utilizes KeyGen, Encaps, and Decaps algorithms [c4].\n* ML-DSA uses a hedged procedure to derive the private random seed from the signer’s private key, the message, and a random string [c3].\n* ML-KEM specifies a fixed length of 256 bits for the shared secret key [c6].\n* ML-DSA includes a check for malformed input while unpacking the hint to ensure the scheme is strongly existentially unforgeable [c3].\n* ML-KEM requires that the byte array containing the encapsulation key correctly decodes to an array of integers modulo q without any modular reductions [c6].",
+  "citations": [
+    {
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "chunk_id": "NIST.FIPS.204::p0064::c000"
+    },
+    {
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "chunk_id": "NIST.FIPS.204::p0064::c001"
+    },
+    {
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 56,
+      "end_page": 56,
+      "chunk_id": "NIST.FIPS.203::p0056::c000"
+    },
+    {
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 56,
+      "end_page": 56,
+      "chunk_id": "NIST.FIPS.203::p0056::c001"
+    }
+  ],
+  "tool_calls": 1,
+  "steps": 4,
+  "trace": [
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 1,
+      "tool_calls": 0
+    },
+    {
+      "type": "plan",
+      "action": "retrieve",
+      "reason": "Default to retrieval.",
+      "query": "What are the differences between ML-KEM and ML-DSA",
+      "args": {},
+      "mode_hint": "general"
+    },
+    {
+      "type": "step",
+      "node": "do_tool",
+      "steps": 2,
+      "tool_calls": 0
+    },
+    {
+      "type": "evidence",
+      "n": 8
+    },
+    {
+      "type": "tool",
+      "action": "retrieve",
+      "stats": {
+        "n": 8
+      },
+      "mode_hint": "symbolic"
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 3,
+      "tool_calls": 1
+    },
+    {
+      "type": "answer",
+      "citations": 4
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 4,
+      "tool_calls": 1
+    },
+    {
+      "type": "verify",
+      "result": "ok",
+      "citations": 4
+    }
+  ],
+  "errors": []
+}

@@ -6,3 +6,8 @@ explain ML-DSA
 how to use SLH-DSA
 give me Algorithm 2 SHAKE128
 What are the steps in Algorithm 2 SHAKE128?
+What are the difference between ML-KEM and ML-DSA?
+Define ML-KEM encapsulation key and where it’s used.
+What are the inputs/outputs of ML-KEM KeyGen?
+How do ML-DSA and SLH-DSA differ in intended use-cases?
+What does NIST say about PQC for Wi-Fi 9?

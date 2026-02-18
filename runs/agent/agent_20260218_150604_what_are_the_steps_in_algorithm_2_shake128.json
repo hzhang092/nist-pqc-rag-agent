@@ -1,0 +1,144 @@
+{
+  "question": "What are the steps in Algorithm 2 SHAKE128?",
+  "plan": {
+    "action": "retrieve",
+    "reason": "Algorithm-like query detected; retrieve evidence.",
+    "query": "What are the steps in Algorithm 2 SHAKE128?",
+    "args": {},
+    "mode_hint": "algorithm"
+  },
+  "evidence": [
+    {
+      "score": 0.01639344262295082,
+      "chunk_id": "NIST.FIPS.203::p0028::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 28,
+      "end_page": 28,
+      "text": "where s ∈ B∗.\nThe function G takes one variable-length input and produces two 32-byte outputs. It will be\ndenoted by G ∶ B∗ → B32 × B32. The two outputs of G will be denoted by (a, b) ← G(c), where\na, b ∈ B32, c ∈ B∗, and G(c) = a‖b. The function G shall be instantiated as\n\nG(c) ∶= SHA3-512(c) . (4.5)\n\neXtendable-Output Function (XOF). This standard uses a XOF wrapper defined in terms of the incremental API for SHAKE128 in SP 800-185 [21]. This SHAKE128 API consists of three functions: • ctx ← SHAKE128.Init() Initializes a XOF “context” ctx. • ctx ← SHAKE128.Absorb(ctx, str) Injects data to be used in the “absorbing” phase of SHAKE128 and updates the context accordingly. • (ctx, B) ← SHAKE128.Squeeze(ctx, 8 ⋅ z) Extracts z output bytes produced during the “squeezing” phase of SHAKE128 and …(truncated)"
+    },
+    {
+      "score": 0.045680369617857444,
+      "chunk_id": "NIST.FIPS.203::p0028::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 28,
+      "end_page": 28,
+      "text": "is equivalent to performing Algorithm 2. This equivalence holds whether or not |stri | and bj are\nmultiples of the SHAKE128 block length.\n\nAlgorithm 2 SHAKE128example(str1, ... , strm , b1, ... , bl) Performs a sequence of absorbing operations followed by a sequence of squeezing operations. Input: byte arrays str1, ... , strm . Input: positive integers b1, ... , bl. l b . Output: a byte array of length ∑j=1 j 1: ctx ← SHAKE128.Init() ▷ initialize context 2: for (i ← 1; i ≤ m; i ++) 3: endctx ← SHAKE128.Absorb(ctx, stri ) ▷ absorb byte array stri 4: for 5: for (j ← 1; j ≤ l; j ++) 6: end(ctx, outj) ← SHAKE128.Squeeze(ctx, 8 ⋅ bj) ▷ squeeze bj-many bytes 7: for 8: output ← out1‖ ... ‖outl ▷ return the concatenation of all the results\n\nIn this standard, the incremental API for SHAKE128 will o…(truncated)"
+    },
+    {
+      "score": 0.030303030303030304,
+      "chunk_id": "NIST.FIPS.203::p0029::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 29,
+      "end_page": 29,
+      "text": "which is defined as follows.\n 1. XOF.Init() = SHAKE128.Init().\n 2. XOF.Absorb(ctx, str) = SHAKE128.Absorb(ctx, str).\n 3. XOF.Squeeze(ctx, l) = SHAKE128.Squeeze(ctx, 8 ⋅ l).\nNote that XOF.Squeeze requires the input length to be specified in bytes. This is consistent with the convention that all wrapper functions treat inputs and outputs as byte arrays and measure the lengths of all such arrays in terms of bytes.\n\n4.2 General Algorithms\nThis section specifies a number of algorithms that will be used as subroutines in ML-KEM.\n\n4.2.1 Conversion and Compression Algorithms\nThis section specifies several algorithms for converting between bit arrays, byte arrays, and arrays of integers modulo m. It also specifies a certain operation for compressing integers modulo q, and the corresponding decompre…(truncated)"
+    },
+    {
+      "score": 0.027272727272727275,
+      "chunk_id": "NIST.FIPS.204::p0030::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 30,
+      "end_page": 30,
+      "text": "Algorithm 4 shows the DER encodings of the OIDs for SHA-256, SHA-512, and SHAKE128. However, it may be used with other hash functions or XOFs.\n\nAlgorithm 4 HashML-DSA.Sign(sk, M , ctx, PH) Generate a “pre-hash” ML-DSA signature. Input: Private key sk ∈ B32+32+64+32⋅((l+k)⋅bitlen (2η)+dk), message M ∈ {0, 1}∗, context string ctx (a byte string of 255 or fewer bytes), pre-hash function PH. Output: ML-DSA signature σ ∈ Bλ/4+l⋅32⋅(1+bitlen (γ1−1))+ω+k. 1: if |ctx| > 255 then 2: return ⊥ ▷ return an error indication if the context string is too long 3: end if 4: 5: rnd ← B32 ▷ for the optional deterministic variant, substitute rnd ← {0}32 6: if rnd = NULL then 7: return ⊥ ▷ return an error indication if random bit generation failed 8: end if 9: 10: switch PH do 11: case SHA-256: 12: OID ← 0x06,…(truncated)"
+    },
+    {
+      "score": 0.026279628993473032,
+      "chunk_id": "NIST.FIPS.205::p0052::c000",
+      "doc_id": "NIST.FIPS.205",
+      "start_page": 52,
+      "end_page": 52,
+      "text": "Algorithm 25 hash_slh_verify(M, SIG, ctx, PH, PK) Verifies a pre-hash SLH-DSA signature. Input: Message M, signature SIG, context string ctx, pre-hash function PH, public key PK. Output: Boolean. 1: if |ctx| > 255 then 2: return false 3: end if 4: switch PH do 5: case SHA-256: 6: OID ← toByte(0x0609608648016503040201, 11) ▷ 2.16.840.1.101.3.4.2.1 7: PHM ← SHA-256(M) 8: case SHA-512: 9: OID ← toByte(0x0609608648016503040203, 11) ▷ 2.16.840.1.101.3.4.2.3 10: PHM ← SHA-512(M) 11: case SHAKE128: 12: OID ← toByte(0x060960864801650304020B, 11) ▷ 2.16.840.1.101.3.4.2.11 13: PHM ← SHAKE128(M, 256) 14: case SHAKE256: 15: OID ← toByte(0x060960864801650304020C, 11) ▷ 2.16.840.1.101.3.4.2.12 16: PHM ← SHAKE256(M, 512) 17: case ... ▷ other approved hash functions or XOFs 18: ... 19: end switch 20: M′ ←…(truncated)"
+    },
+    {
+      "score": 0.029513888888888888,
+      "chunk_id": "NIST.FIPS.204::p0024::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 24,
+      "end_page": 24,
+      "text": "8. G.Squeeze(ctx, l) = SHAKE128.Squeeze(ctx, 8l)\n\nIn addition to SHAKE128 and SHAKE256, HashML-DSA.Sign and HashML-DSA.Verify may call other approved hash functions for pre-hashing. The pseudocode in this standard also treats these functions as returning a byte string as output while supporting either a bit string or a byte string as input. Here, it\nshould be noted that the hash functions defined in [8] use different rules (i.e., big-endian ordering) to\nrelate bits, bytes, and words."
+    },
+    {
+      "score": 0.024934585193166076,
+      "chunk_id": "NIST.IR.8545::p0015::c002",
+      "doc_id": "NIST.IR.8545",
+      "start_page": 15,
+      "end_page": 15,
+      "text": "2.2.3. Algorithm and Implementation Characteristics The Call for Proposals [22] also requested various desirable algorithm and implementation characteristics for consideration, particularly flexibility, simplicity, and ease of adoption. An important characteristic of candidates is their potential performance impact on existing widely used protocols (e.g., TLS, IPSec, and SSH) and certificates. The third round included real-world experiments to identify potential performance problems with the algorithms. These experiments continued into the fourth round with a greater focus on HQC and BIKE (see Sec. 2.2.2). NIST believes it is important to select cryptographic standards that will be capable of protecting sensitive government information as well as being widely adopted for use in industry. I…(truncated)"
+    },
+    {
+      "score": 0.02402745995423341,
+      "chunk_id": "NIST.FIPS.204::p0030::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 30,
+      "end_page": 30,
+      "text": "Algorithm 4 HashML-DSA.Sign(sk, M , ctx, PH) Generate a “pre-hash” ML-DSA signature. Input: Private key sk ∈ B32+32+64+32⋅((l+k)⋅bitlen (2η)+dk), message M ∈ {0, 1}∗, context string ctx (a byte string of 255 or fewer bytes), pre-hash function PH. Output: ML-DSA signature σ ∈ Bλ/4+l⋅32⋅(1+bitlen (γ1−1))+ω+k. 1: if |ctx| > 255 then 2: return ⊥ ▷ return an error indication if the context string is too long 3: end if 4: 5: rnd ← B32 ▷ for the optional deterministic variant, substitute rnd ← {0}32 6: if rnd = NULL then 7: return ⊥ ▷ return an error indication if random bit generation failed 8: end if 9: 10: switch PH do 11: case SHA-256: 12: OID ← 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01 ▷ 2.16.840.1.101.3.4.2.1 13: PHM ← SHA256(M) 14: case SHA-512: 15: OID ← 0x06, 0x09,…(truncated)"
+    }
+  ],
+  "draft_answer": "* Algorithm 2 begins by initializing the context using the SHAKE128.Init function [c1].\n* The algorithm performs a sequence of absorbing operations by iterating from 1 to m and updating the context with each input byte array using SHAKE128.Absorb [c1].\n* It then iterates from 1 to l to perform a sequence of squeezing operations, calling SHAKE128.Squeeze to extract the number of bytes specified by each input integer [c1].\n* The final output is a byte array formed by concatenating all the individual results obtained from the squeezing phase [c1].",
+  "citations": [
+    {
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 28,
+      "end_page": 28,
+      "chunk_id": "NIST.FIPS.203::p0028::c001",
+      "key": "c1"
+    }
+  ],
+  "tool_calls": 1,
+  "steps": 4,
+  "trace": [
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 1,
+      "tool_calls": 0
+    },
+    {
+      "type": "plan",
+      "action": "retrieve",
+      "reason": "Algorithm-like query detected; retrieve evidence.",
+      "query": "What are the steps in Algorithm 2 SHAKE128?",
+      "args": {},
+      "mode_hint": "algorithm"
+    },
+    {
+      "type": "step",
+      "node": "do_tool",
+      "steps": 2,
+      "tool_calls": 0
+    },
+    {
+      "type": "evidence",
+      "n": 8
+    },
+    {
+      "type": "tool",
+      "action": "retrieve",
+      "stats": {
+        "n": 8
+      },
+      "mode_hint": "algorithm"
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 3,
+      "tool_calls": 1
+    },
+    {
+      "type": "answer",
+      "citations": 1
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 4,
+      "tool_calls": 1
+    },
+    {
+      "type": "verify",
+      "result": "ok",
+      "citations": 1
+    }
+  ],
+  "errors": []
+}

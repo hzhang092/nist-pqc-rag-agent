@@ -3,3 +3,5 @@ python-dotenv
 nest_asyncio
 google-genai
 rank-bm25
+langchain-core
+langgraph

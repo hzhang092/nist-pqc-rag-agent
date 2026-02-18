@@ -1,0 +1,31 @@
+(eleven) D:\Waterloo\terms\MDSAI\1B\projects\nist-pqc-rag-agent>python -m rag.ask "What are the steps in Algorithm 2 SHAKE128?"  --show-evidence
+
+=== Model ===
+gemini-3-flash-preview
+
+=== Evidence (top hits) ===
+01. score=0.0164 NIST.FIPS.203 p28-p28 chunk_id=NIST.FIPS.203::p0028::c000
+    where s ∈ B∗. The function G takes one variable-length input and produces two 32-byte outputs. It will be denoted by G ∶ B∗ → B32 × B32. The two outputs of G will be denoted by (a, b) ← G(c), where a, b ∈ B32, c ∈ B∗, an...
+02. score=0.0457 NIST.FIPS.203 p28-p28 chunk_id=NIST.FIPS.203::p0028::c001
+    is equivalent to performing Algorithm 2. This equivalence holds whether or not |stri | and bj are multiples of the SHAKE128 block length.  Algorithm 2 SHAKE128example(str1, ... , strm , b1, ... , bl) Performs a sequence ...
+03. score=0.0303 NIST.FIPS.203 p29-p29 chunk_id=NIST.FIPS.203::p0029::c000
+    which is defined as follows.  1. XOF.Init() = SHAKE128.Init().  2. XOF.Absorb(ctx, str) = SHAKE128.Absorb(ctx, str).  3. XOF.Squeeze(ctx, l) = SHAKE128.Squeeze(ctx, 8 ⋅ l). Note that XOF.Squeeze requires the input length...
+04. score=0.0273 NIST.FIPS.204 p30-p30 chunk_id=NIST.FIPS.204::p0030::c000
+    Algorithm 4 shows the DER encodings of the OIDs for SHA-256, SHA-512, and SHAKE128. However, it may be used with other hash functions or XOFs.  Algorithm 4 HashML-DSA.Sign(sk, M , ctx, PH) Generate a “pre-hash” ML-DSA si...
+05. score=0.0263 NIST.FIPS.205 p52-p52 chunk_id=NIST.FIPS.205::p0052::c000
+    Algorithm 25 hash_slh_verify(M, SIG, ctx, PH, PK) Verifies a pre-hash SLH-DSA signature. Input: Message M, signature SIG, context string ctx, pre-hash function PH, public key PK. Output: Boolean. 1: if |ctx| > 255 then 2...
+06. score=0.0295 NIST.FIPS.204 p24-p24 chunk_id=NIST.FIPS.204::p0024::c001
+    8. G.Squeeze(ctx, l) = SHAKE128.Squeeze(ctx, 8l)  In addition to SHAKE128 and SHAKE256, HashML-DSA.Sign and HashML-DSA.Verify may call other approved hash functions for pre-hashing. The pseudocode in this standard also t...
+07. score=0.0249 NIST.IR.8545 p15-p15 chunk_id=NIST.IR.8545::p0015::c002
+    2.2.3. Algorithm and Implementation Characteristics The Call for Proposals [22] also requested various desirable algorithm and implementation characteristics for consideration, particularly flexibility, simplicity, and e...
+08. score=0.0240 NIST.FIPS.204 p30-p30 chunk_id=NIST.FIPS.204::p0030::c001
+    Algorithm 4 HashML-DSA.Sign(sk, M , ctx, PH) Generate a “pre-hash” ML-DSA signature. Input: Private key sk ∈ B32+32+64+32⋅((l+k)⋅bitlen (2η)+dk), message M ∈ {0, 1}∗, context string ctx (a byte string of 255 or fewer byt...
+
+=== Answer ===
+* Algorithm 2 begins by initializing the context using the SHAKE128.Init function [c1].
+* The algorithm performs a sequence of absorbing operations by iterating from 1 to m and updating the context with each input byte array using SHAKE128.Absorb [c1].
+* It then iterates from 1 to l to perform a sequence of squeezing operations, calling SHAKE128.Squeeze to extract the number of bytes specified by each input integer [c1].
+* The final output is a byte array formed by concatenating all the individual results obtained from the squeezing phase [c1].
+
+=== Citations ===
+[c1] NIST.FIPS.203 p28-p28 chunk_id=NIST.FIPS.203::p0028::c001

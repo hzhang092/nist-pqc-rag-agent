@@ -113,7 +113,12 @@ class AgentState(TypedDict, total=False):
     # Budgets / counters
     tool_calls: int
     steps: int
+    retrieval_round: int
 
     # Debugging / provenance
     trace: List[Dict[str, Any]]
     errors: List[str]
+    evidence_sufficient: bool
+    stop_reason: str
+    refusal_reason: str
+    last_retrieval_stats: Dict[str, Any]

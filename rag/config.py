@@ -67,6 +67,19 @@ def _env_int(name: str, default: int) -> int:
         raise ValueError(f"Invalid int for {name}={v!r}") from e
 
 
+def _env_int_any(names: tuple[str, ...], default: int) -> int:
+    """Reads the first available integer environment variable from a list."""
+    for name in names:
+        v = os.getenv(name)
+        if v is None or v.strip() == "":
+            continue
+        try:
+            return int(v)
+        except ValueError as e:
+            raise ValueError(f"Invalid int for {name}={v!r}") from e
+    return default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     """Reads a boolean environment variable, returning a default if not set."""
     v = os.getenv(name)
@@ -127,6 +140,19 @@ class Settings:
     # The temperature for the LLM, controlling randomness (0.0 is deterministic).
     LLM_TEMPERATURE: float = float(_env_str("LLM_TEMPERATURE", "0.0"))
 
+    # --- Agent loop bounds / stop rules ---
+    # Total LangGraph node transitions allowed per request.
+    AGENT_MAX_STEPS: int = _env_int("AGENT_MAX_STEPS", 8)
+    # Maximum retrieval tool calls allowed per request.
+    AGENT_MAX_TOOL_CALLS: int = _env_int("AGENT_MAX_TOOL_CALLS", 3)
+    # Maximum retrieve-assess rounds before forced stop/refusal.
+    AGENT_MAX_RETRIEVAL_ROUNDS: int = _env_int("AGENT_MAX_RETRIEVAL_ROUNDS", 2)
+    # Minimum unique evidence chunks required before answer generation.
+    AGENT_MIN_EVIDENCE_HITS: int = _env_int_any(
+        ("AGENT_MIN_EVIDENCE_HITS", "ASK_MIN_EVIDENCE_HITS"),
+        2,
+    )
+
 
 SETTINGS = Settings()
 
@@ -166,3 +192,11 @@ def validate_settings() -> None:
         raise ValueError("ASK_MIN_EVIDENCE_HITS must be >= 0")
     if SETTINGS.ASK_NEIGHBOR_WINDOW < 0:
         raise ValueError("ASK_NEIGHBOR_WINDOW must be >= 0")
+    if SETTINGS.AGENT_MAX_STEPS <= 0:
+        raise ValueError("AGENT_MAX_STEPS must be > 0")
+    if SETTINGS.AGENT_MAX_TOOL_CALLS <= 0:
+        raise ValueError("AGENT_MAX_TOOL_CALLS must be > 0")
+    if SETTINGS.AGENT_MAX_RETRIEVAL_ROUNDS <= 0:
+        raise ValueError("AGENT_MAX_RETRIEVAL_ROUNDS must be > 0")
+    if SETTINGS.AGENT_MIN_EVIDENCE_HITS < 0:
+        raise ValueError("AGENT_MIN_EVIDENCE_HITS must be >= 0")

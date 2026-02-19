@@ -1,0 +1,83 @@
+{
+  "answer": {
+    "citation_presence_rate": null,
+    "enabled": false,
+    "inline_citation_sentence_rate": null,
+    "model_dependent": true,
+    "note": "Answer metrics are model-dependent and less stable than retrieval metrics; use retrieval metrics as primary regression signals.",
+    "refusal_accuracy": null
+  },
+  "counts": {
+    "answer_errors": 0,
+    "answer_evaluated_questions": 0,
+    "answerable_questions": 12,
+    "labeled_answerable_questions": 12,
+    "retrieval_evaluated_questions": 12,
+    "retrieval_skipped_unanswerable": 1,
+    "retrieval_skipped_unlabeled_answerable": 0,
+    "total_questions": 13,
+    "unanswerable_questions": 1,
+    "unlabeled_answerable_questions": 0
+  },
+  "dataset_path": "eval\\day4\\questions.jsonl",
+  "generated_at_utc": "2026-02-19T23:16:39.494820+00:00",
+  "retrieval": {
+    "at_k": {
+      "k1": {
+        "mrr": 0.16666666666666666,
+        "ndcg": 0.16666666666666666,
+        "recall": 0.16666666666666666
+      },
+      "k3": {
+        "mrr": 0.23611111111111113,
+        "ndcg": 0.26091081279762146,
+        "recall": 0.3333333333333333
+      },
+      "k5": {
+        "mrr": 0.2569444444444445,
+        "ndcg": 0.2829164896786707,
+        "recall": 0.375
+      },
+      "k8": {
+        "mrr": 0.2569444444444445,
+        "ndcg": 0.3011171094135177,
+        "recall": 0.4166666666666667
+      }
+    },
+    "metric_ks": [
+      1,
+      3,
+      5,
+      8
+    ],
+    "mrr_at_k": 0.2569444444444445,
+    "n_questions": 12,
+    "ndcg_at_k": 0.3011171094135177,
+    "primary_k": 8,
+    "recall_at_k": 0.4166666666666667,
+    "scoring_scope": "answerable_with_non_empty_gold_only",
+    "skipped_unanswerable_qids": [
+      "q013"
+    ],
+    "skipped_unlabeled_answerable_qids": []
+  },
+  "run_config": {
+    "allow_unlabeled": false,
+    "backend": "faiss",
+    "candidate_multiplier": 4,
+    "fusion": true,
+    "k": 8,
+    "k0": 60,
+    "ks": [
+      1,
+      3,
+      5,
+      8
+    ],
+    "mode": "hybrid",
+    "rerank": true,
+    "rerank_pool": 40,
+    "retrieval_depth": 8,
+    "with_answers": false
+  }
+}

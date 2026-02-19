@@ -1,0 +1,13 @@
+{"answerable": true, "gold": [{"doc_id":"NIST.IR.8547.ipd","start_page":8,"end_page":8}], "qid": "q001", "question": "what is PQC"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":10,"end_page":10}, {"doc_id":"NIST.FIPS.204","start_page":11,"end_page":11}, {"doc_id":"NIST.FIPS.205","start_page":11,"end_page":11}], "qid": "q002", "question": "why do we need the PQC standards"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":10,"end_page":10}, {"doc_id":"NIST.FIPS.204","start_page":3,"end_page":3}, {"doc_id":"NIST.FIPS.205","start_page":3,"end_page":3}], "qid": "q003", "question": "What are the PQC standards"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":3,"end_page":3}, {"doc_id":"NIST.FIPS.203","start_page":22,"end_page":23}], "qid": "q004", "question": "What is ML-KEM"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.204","start_page":3,"end_page":4}, {"doc_id":"NIST.FIPS.204","start_page":11,"end_page":11}], "qid": "q005", "question": "explain ML-DSA"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.205","start_page":43,"end_page":52}], "qid": "q006", "question": "What are the steps (and inputs/outputs) of SLH-DSA key generation, signing, and verification?"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":28,"end_page":28}], "qid": "q007", "question": "give me Algorithm 2 SHAKE128"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":28,"end_page":28}], "qid": "q008", "question": "What are the steps in Algorithm 2 SHAKE128?"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":3,"end_page":3}, {"doc_id":"NIST.FIPS.203","start_page":21,"end_page":21}, {"doc_id":"NIST.FIPS.204","start_page":3,"end_page":4},  {"doc_id":"NIST.FIPS.204","start_page":19,"end_page":19}], "qid": "q009", "question": "What are the difference between ML-KEM and ML-DSA?"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":4,"end_page":4}, {"doc_id":"NIST.FIPS.203","start_page":11,"end_page":11}], "qid": "q010", "question": "Define ML-KEM encapsulation key and where it’s used."}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.203","start_page":44,"end_page":44}], "qid": "q011", "question": "What are the inputs/outputs of ML-KEM KeyGen?"}
+{"answerable": true, "gold": [{"doc_id":"NIST.FIPS.204","start_page":5,"end_page":5}, {"doc_id":"NIST.FIPS.205","start_page":5,"end_page":5}], "qid": "q012", "question": "How do ML-DSA and SLH-DSA differ in intended use-cases?"}
+{"answerable": false, "gold": [], "qid": "q013", "question": "What does NIST say about PQC for Wi-Fi 9?"}

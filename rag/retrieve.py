@@ -70,6 +70,17 @@ def _tie_break_key(hit: ChunkHit) -> tuple:
     return (hit.doc_id, hit.start_page, hit.chunk_id)
 
 
+def _eval_rank_key(hit: ChunkHit) -> tuple:
+    """Stable eval ranking key for deterministic metric computation."""
+    return (
+        -float(hit.score),
+        hit.doc_id,
+        int(hit.start_page),
+        int(hit.end_page),
+        hit.chunk_id,
+    )
+
+
 TECH_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-._][A-Za-z0-9]+)+")
 ALGORITHM_NUM_RE = re.compile(r"\balgorithm\s+(\d+)\b", flags=re.IGNORECASE)
 
@@ -334,6 +345,59 @@ def retrieve(
             rerank_pool=rerank_pool,
         )
     raise ValueError(f"Unknown retrieval mode: {mode}")
+
+
+def retrieve_for_eval(
+    query: str,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    k: int = SETTINGS.TOP_K,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
+    evidence_window: bool = False,
+    cheap_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    debug: bool = False,
+) -> List[dict]:
+    """
+    Eval-friendly retrieval adapter with a stable row schema.
+
+    Returns a deterministic list of dictionaries so evaluation code can stay
+    decoupled from `ChunkHit` internals.
+    """
+    _ = evidence_window
+    _ = debug
+
+    hits = retrieve(
+        query=query,
+        k=k,
+        mode=mode,
+        backend=backend,
+        use_query_fusion=fusion,
+        candidate_multiplier=candidate_multiplier,
+        k0=k0,
+        enable_rerank=cheap_rerank,
+        rerank_pool=rerank_pool,
+    )
+
+    ordered_hits = sorted(hits, key=_eval_rank_key)
+
+    rows: List[dict] = []
+    for rank, hit in enumerate(ordered_hits, start=1):
+        rows.append(
+            {
+                "chunk_id": hit.chunk_id,
+                "doc_id": hit.doc_id,
+                "start_page": hit.start_page,
+                "end_page": hit.end_page,
+                "score": float(hit.score),
+                "text": hit.text,
+                "rank": rank,
+                "mode": mode,
+            }
+        )
+    return rows
 
 
 

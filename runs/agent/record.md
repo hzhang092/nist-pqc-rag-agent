@@ -1,0 +1,19 @@
+## after implemented Langgraph loop:
+agent_20260219_100255_what_are_the_difference_between_mlkem_and_mldsa.json
+agent_20260219_101327_what_does_nist_say_about_pqc_for_wifi_9.json
+
+
+## after implemented final_answer state key:
+agent_20260218_152457_what_does_nist_say_about_pqc_for_wifi_9.json
+agent_20260218_153229_define_mlkem_encapsulation_key_and_where_its_used.json
+agent_20260218_161908_what_are_the_differences_between_mlkem_and_mldsa.json
+agent_20260218_231419_what_are_the_difference_between_mlkem_and_mldsa.json
+
+## after update compare action detection in graph.py:
+agent_20260218_145146_what_are_the_differences_between_mlkem_and_mldsa.json : after the update, gemini is not able to generate a solution.
+agent_20260218_150604_what_are_the_steps_in_algorithm_2_shake128.json
+
+
+## inital state of langgraph:
+agent_20260218_101844_what_are_the_steps_in_algorithm_2_shake128.json
+agent_20260218_113844_what_are_the_differences_between_mlkem_and_mldsa.json

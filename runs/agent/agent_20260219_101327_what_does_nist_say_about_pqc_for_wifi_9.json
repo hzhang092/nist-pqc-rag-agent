@@ -1,0 +1,189 @@
+{
+  "question": "What does NIST say about PQC for Wi-Fi 9?",
+  "plan": {
+    "action": "retrieve",
+    "reason": "Default to retrieval.",
+    "query": "What does NIST say about PQC for Wi-Fi 9?",
+    "args": {},
+    "mode_hint": "general"
+  },
+  "evidence": [
+    {
+      "score": 0.029551337359792925,
+      "chunk_id": "NIST.FIPS.203::p0052::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 52,
+      "end_page": 52,
+      "text": "[23] Alagic G, Apon D, Cooper D, Dang Q, Dang T, Kelsey J, Lichtinger J, Liu YK, Miller C, Moody\nD, Peralta R, Perlner R, Robinson A, Smith-Tone D (2022) Status report on the third round of the NIST post-quantum cryptography standardization process (National Institute of Standards and Technology, Gaithersburg, MD), NIST Interagency or Internal Report (IR)\n 8413. https://doi.org/10.6028/NIST.IR.8413-upd1.\n[24] CRYSTALS-Kyber submission team (2023) “Discussion about Kyber’s tweaked FO transform”,\nPQC-Forum Post. Available at https://groups.google.com/a/list.nist.gov/g/pqc-forum/c/W FRDl8DqYQ4.\n[25] CRYSTALS-Kyber submission team (2023) “Kyber decisions, part 2: FO transform”, PQC-\nForum Post. Available at https://groups.google.com/a/list.nist.gov/g/pqc-forum/c/C0D3W\n1KoINY/m/99kIvydoAwAJ."
+    },
+    {
+      "score": 0.016129032258064516,
+      "chunk_id": "NIST.SP.800-227::p0009::c001",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 9,
+      "end_page": 9,
+      "text": "1.1. Background\nA key-establishment scheme is a set of algorithms that can be used to securely establish a shared secret key between two or more parties. Such a shared secret key can then be used to perform tasks that are suitable for symmetric-key cryptography, such as efficient confidential communication.\nMany widely deployed key-establishment schemes — including those specified in NIST Special Publication (SP) 800-56A [1] and SP 800-56B [2] — are vulnerable to cryptographic attacks that make use of a large-scale, cryptanalytically relevant quantum computer. In 2016,\nNIST initiated a process to select and standardize a set of post-quantum key-establishment schemes (i.e., key-establishment schemes that would not be vulnerable to attacks even by cryptanalytically-relevant quantum computers…(truncated)"
+    },
+    {
+      "score": 0.015873015873015872,
+      "chunk_id": "NIST.IR.8545::p0015::c002",
+      "doc_id": "NIST.IR.8545",
+      "start_page": 15,
+      "end_page": 15,
+      "text": "2.2.3. Algorithm and Implementation Characteristics The Call for Proposals [22] also requested various desirable algorithm and implementation characteristics for consideration, particularly flexibility, simplicity, and ease of adoption. An important characteristic of candidates is their potential performance impact on existing widely used protocols (e.g., TLS, IPSec, and SSH) and certificates. The third round included real-world experiments to identify potential performance problems with the algorithms. These experiments continued into the fourth round with a greater focus on HQC and BIKE (see Sec. 2.2.2). NIST believes it is important to select cryptographic standards that will be capable of protecting sensitive government information as well as being widely adopted for use in industry. I…(truncated)"
+    },
+    {
+      "score": 0.04421356457417033,
+      "chunk_id": "NIST.FIPS.204::p0040::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 40,
+      "end_page": 40,
+      "text": "Algorithm 15 CoeffFromHalfByte(b)\nLet η ∈ {2, 4}. Generates an element of {−η, −η + 1, ... , η} ∪ {⊥}.\nInput: Integer b ∈ {0, 1, ... , 15}.\nOutput: An integer between −η and η, or ⊥.\n 1: if η = 2 and b < 15 then return 2 − (b mod 5) ▷ rejection sampling from {−2, ... , 2}\n2: else\n 3: if η = 4 and b < 9 then return 4 − b ▷ rejection sampling from {−4, ... , 4}\n4: else return ⊥\n5: end if\n6: end if\n\nAlgorithms 16–19 efficiently translate an element w ∈ R into a byte string and vice versa under the\nassumption that the coefficients of w are in a restricted range. SimpleBitPack assumes that wi ∈ [0, b]\nfor some positive integer b and packs w into a byte string of length 32 ⋅ bitlen b. BitPack allows for the\nmore general restriction wi ∈ [−a, b]. The BitPack algorithm works by merely subtracting …(truncated)"
+    },
+    {
+      "score": 0.015384615384615385,
+      "chunk_id": "NIST.FIPS.203::p0005::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 5,
+      "end_page": 5,
+      "text": "6. Applicability. Federal Information Processing Standards apply to information systems used or operated by federal agencies or by a contractor of an agency or other organization on behalf of an agency. They do not apply to national security systems as defined in 44 U.S.C. 3552. This standard, or other FIPS or NIST Special Publications that specify alternative mechanisms, shall be used wherever the establishment of a shared secret key (or shared secret from which keying material can be generated) is required for federal applications, including the use of such a key with symmetric-key cryptographic algorithms, in accordance with applicable Office of Management and Budget and agency policies. The adoption and use of this standard are available to private and commercial organizations. 7. Impl…(truncated)"
+    },
+    {
+      "score": 0.015151515151515152,
+      "chunk_id": "NIST.SP.800-227::p0020::c001",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 20,
+      "end_page": 20,
+      "text": "Testing and validation. Mistakes in implementations can easily lead to security vulnerabilities or a loss of usability. Therefore, it is crucial that implementations are validated for conformance to NIST cryptographic standards and FIPS 140 by the Cryptographic Algorithm Validation Program (CAVP) and CMVP. Validation testing checks whether a given implementation correctly computes the desired output for only a small number of (often randomly sampled) inputs. This means that validation testing does not guarantee correct functioning on all inputs, which is often impossible to ensure. Nonetheless, implementations must correctly implement the mathematical functionality of the target KEM. As validation only tests input-output behavior, implementations need not follow the exact stepby-step algor…(truncated)"
+    },
+    {
+      "score": 0.014925373134328358,
+      "chunk_id": "NIST.SP.800-227::p0039::c001",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 39,
+      "end_page": 39,
+      "text": "K ← KDF(K1, K2) (16)\n\nthat only uses the two shared secret keys K1 (of Π1) and K2 (of Π2) does not preserve IND-CCA security, regardless of the properties of the KDF. So, for example, the scheme Π2 could be so broken that C[Π1, Π2] is not IND-CCA, even if Π1 is IND-CCA and regardless of what KDF is used. Therefore, NIST encourages the use of key combiners that generically preserve IND-CCA security, in the sense that the combined scheme is IND-CCA, provided at least one of the ingredient KEMs is IND-CCA. One example of such a key combiner is as in (15). Let H denote a hash function from the SHA-3 family, which is approved for use in one-step key derivation in SP 800-56C [21]. Define the key combiner KeyCombineCCA as follows (recalling the notation in Sec. 4.6): H • Inputs from Π1: ek1, c1, …(truncated)"
+    },
+    {
+      "score": 0.014705882352941176,
+      "chunk_id": "NIST.FIPS.205::p0006::c000",
+      "doc_id": "NIST.FIPS.205",
+      "start_page": 6,
+      "end_page": 6,
+      "text": "14. Qualifications. The security of a digital signature system depends on the secrecy of the signatory’s private keys. Signatories shall, therefore, guard against the disclosure of their private keys. While it is the intent of this standard to specify general security requirements for generating digital signatures, conformance to this standard does not ensure that a particular implementation is secure. It is the responsibility of an implementer to ensure that any module that implements a digital signature capability is designed and built in a secure manner. Similarly, the use of a product containing an implementation that conforms to this standard does not guarantee the security of the overall system in which the product is used. The re- sponsible authority in each agency or department sha…(truncated)"
+    }
+  ],
+  "draft_answer": "not found in provided docs",
+  "final_answer": "I could not produce reliable citations for the drafted answer, so I cannot return it.",
+  "citations": [],
+  "tool_calls": 1,
+  "steps": 5,
+  "retrieval_round": 1,
+  "trace": [
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 1,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "plan",
+      "action": "retrieve",
+      "reason": "Default to retrieval.",
+      "query": "What does NIST say about PQC for Wi-Fi 9?",
+      "args": {},
+      "mode_hint": "general"
+    },
+    {
+      "type": "step",
+      "node": "retrieve",
+      "steps": 2,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "retrieval_round_started",
+      "round": 1,
+      "action": "retrieve",
+      "tool_calls": 1
+    },
+    {
+      "type": "evidence",
+      "n": 8
+    },
+    {
+      "type": "retrieval_round_result",
+      "round": 1,
+      "action": "retrieve",
+      "new_hits": 8,
+      "total_hits": 8,
+      "tool_stats": {
+        "n": 8
+      },
+      "mode_hint": "symbolic"
+    },
+    {
+      "type": "step",
+      "node": "assess_evidence",
+      "steps": 3,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "assessment_decision",
+      "sufficient": true,
+      "reasons": [],
+      "budget_reason": null,
+      "evidence_hits": 8,
+      "doc_diversity": 5,
+      "anchors": [],
+      "anchor_match": true,
+      "tool_calls": 1,
+      "steps": 3,
+      "retrieval_round": 1
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 4,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "answer",
+      "citations": 0
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 5,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "final_answer"
+    },
+    {
+      "type": "verify",
+      "result": "refuse",
+      "stop_reason": "sufficient_evidence",
+      "refusal_reason": "missing_citations",
+      "citations": 0
+    }
+  ],
+  "errors": [],
+  "evidence_sufficient": true,
+  "stop_reason": "sufficient_evidence",
+  "refusal_reason": "missing_citations",
+  "last_retrieval_stats": {
+    "round": 1,
+    "action": "retrieve",
+    "new_hits": 8,
+    "total_hits": 8,
+    "tool_stats": {
+      "n": 8
+    },
+    "mode_hint": "symbolic"
+  }
+}

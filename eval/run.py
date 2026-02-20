@@ -16,13 +16,15 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from eval.dataset import load_questions, qid_sort_key
 from eval.metrics import (
     compute_retrieval_metrics_by_ks,
     evaluate_answer_payload,
     hit_matches_gold,
+    hit_matches_gold_doc_only,
+    hit_matches_gold_with_tolerance,
     safe_mean,
 )
 from rag.config import SETTINGS
@@ -111,10 +113,15 @@ def _parse_ks(raw: str) -> List[int]:
     return ordered
 
 
-def _gold_hit_ranks(hits: List[dict], gold: List[dict], k: int) -> List[int]:
+def _gold_hit_ranks(
+    hits: List[dict],
+    gold: List[dict],
+    k: int,
+    matcher: Callable[[dict, dict], bool] = hit_matches_gold,
+) -> List[int]:
     ranks: List[int] = []
     for hit in hits[:k]:
-        if any(hit_matches_gold(hit, g) for g in gold):
+        if any(matcher(hit, g) for g in gold):
             ranks.append(int(hit.get("rank", 0)))
     return ranks
 
@@ -131,6 +138,13 @@ def _top_hit_ids(hits: List[dict], limit: int = 10) -> List[dict]:
             }
         )
     return out
+
+
+def _hit_rate_at_k(rank_lists: List[List[int]], k: int) -> float | None:
+    if not rank_lists:
+        return None
+    hits = sum(1 for ranks in rank_lists if any(rank <= k for rank in ranks))
+    return hits / float(len(rank_lists))
 
 
 def _build_summary_markdown(summary: Dict[str, Any]) -> str:
@@ -167,17 +181,38 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
             f"mrr={_fmt(metric_row.get('mrr'))}, ndcg={_fmt(metric_row.get('ndcg'))}"
         )
 
+    sec = retrieval.get("secondary_diagnostics", {})
+    sec_at_k = sec.get("hit_rate_at_k", {})
+    if sec_at_k:
+        lines.extend(
+            [
+                "",
+                "### Secondary Diagnostics",
+                f"- near_page_tolerance: {sec.get('near_page_tolerance')}",
+            ]
+        )
+        for key in sorted(
+            sec_at_k.keys(),
+            key=lambda item: int(item[1:]) if item.startswith("k") and item[1:].isdigit() else item,
+        ):
+            diag = sec_at_k[key]
+            lines.append(
+                f"- {key}: strict={_fmt(diag.get('strict_page_overlap'))}, "
+                f"doc_only={_fmt(diag.get('doc_only'))}, "
+                f"near_page={_fmt(diag.get('near_page_tolerance'))}"
+            )
+
     lines.extend(
         [
             "",
-        "## Answer",
-        f"- enabled: {answer.get('enabled')}",
-        f"- model_dependent: {answer.get('model_dependent')}",
-        f"- note: {answer.get('note')}",
-        f"- answer_evaluated: {summary['counts']['answer_evaluated_questions']}",
-        f"- citation_presence_rate: {_fmt(answer.get('citation_presence_rate'))}",
-        f"- inline_citation_sentence_rate: {_fmt(answer.get('inline_citation_sentence_rate'))}",
-        f"- refusal_accuracy: {_fmt(answer.get('refusal_accuracy'))}",
+            "## Answer",
+            f"- enabled: {answer.get('enabled')}",
+            f"- model_dependent: {answer.get('model_dependent')}",
+            f"- note: {answer.get('note')}",
+            f"- answer_evaluated: {summary['counts']['answer_evaluated_questions']}",
+            f"- citation_presence_rate: {_fmt(answer.get('citation_presence_rate'))}",
+            f"- inline_citation_sentence_rate: {_fmt(answer.get('inline_citation_sentence_rate'))}",
+            f"- refusal_accuracy: {_fmt(answer.get('refusal_accuracy'))}",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -199,6 +234,12 @@ def main() -> None:
     parser.add_argument("--k0", type=int, default=SETTINGS.RETRIEVAL_RRF_K0)
     parser.add_argument("--candidate-multiplier", type=int, default=SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER)
     parser.add_argument("--rerank-pool", type=int, default=SETTINGS.RETRIEVAL_RERANK_POOL)
+    parser.add_argument(
+        "--near-page-tolerance",
+        type=int,
+        default=1,
+        help="Page slack for relaxed diagnostics (doc match + overlap within ±N pages).",
+    )
     parser.add_argument("--no-fusion", action="store_true", help="Disable query fusion in retrieval.")
     parser.add_argument("--no-rerank", action="store_true", help="Disable rerank in retrieval.")
     parser.add_argument(
@@ -214,6 +255,8 @@ def main() -> None:
         metric_ks = _parse_ks(args.ks)
     except ValueError as exc:
         raise SystemExit(f"Invalid --ks: {exc}") from exc
+    if args.near_page_tolerance < 0:
+        raise SystemExit("--near-page-tolerance must be >= 0")
 
     retrieval_depth = max(args.k, max(metric_ks))
     primary_k = args.k if args.k in metric_ks else max(metric_ks)
@@ -233,6 +276,9 @@ def main() -> None:
     retrieval_eval_qids: List[str] = []
     retrieval_skipped_unanswerable_qids: List[str] = []
     retrieval_skipped_unlabeled_qids: List[str] = []
+    strict_rank_lists: List[List[int]] = []
+    doc_only_rank_lists: List[List[int]] = []
+    near_page_rank_lists: List[List[int]] = []
     answer_rows: List[Dict[str, Any]] = []
     answer_errors = 0
 
@@ -253,6 +299,8 @@ def main() -> None:
 
         retrieval_metrics = None
         gold_hit_ranks: List[int] = []
+        doc_hit_ranks: List[int] = []
+        near_page_hit_ranks: List[int] = []
         if row["answerable"] and row["gold"]:
             metrics_by_k = compute_retrieval_metrics_by_ks(
                 hits=hits,
@@ -267,7 +315,29 @@ def main() -> None:
             for k in metric_ks:
                 retrieval_rows_by_k[k].append(metrics_by_k[f"k{k}"])
             retrieval_eval_qids.append(row["qid"])
-            gold_hit_ranks = _gold_hit_ranks(hits=hits, gold=row["gold"], k=retrieval_depth)
+            gold_hit_ranks = _gold_hit_ranks(
+                hits=hits,
+                gold=row["gold"],
+                k=retrieval_depth,
+                matcher=hit_matches_gold,
+            )
+            doc_hit_ranks = _gold_hit_ranks(
+                hits=hits,
+                gold=row["gold"],
+                k=retrieval_depth,
+                matcher=hit_matches_gold_doc_only,
+            )
+            near_page_hit_ranks = _gold_hit_ranks(
+                hits=hits,
+                gold=row["gold"],
+                k=retrieval_depth,
+                matcher=lambda h, g: hit_matches_gold_with_tolerance(
+                    h, g, page_tolerance=args.near_page_tolerance
+                ),
+            )
+            strict_rank_lists.append(gold_hit_ranks)
+            doc_only_rank_lists.append(doc_hit_ranks)
+            near_page_rank_lists.append(near_page_hit_ranks)
         elif not row["answerable"]:
             retrieval_skipped_unanswerable_qids.append(row["qid"])
         else:
@@ -281,6 +351,8 @@ def main() -> None:
             "retrieval": {
                 "metrics": retrieval_metrics,
                 "gold_hit_ranks": gold_hit_ranks,
+                "doc_hit_ranks": doc_hit_ranks,
+                "near_page_hit_ranks": near_page_hit_ranks,
                 "top_hit_ids": _top_hit_ids(hits=hits, limit=min(10, retrieval_depth)),
                 "hits": hits,
             },
@@ -321,6 +393,22 @@ def main() -> None:
         }
 
     primary_metrics = retrieval_at_k.get(f"k{primary_k}", {"recall": None, "mrr": None, "ndcg": None})
+    secondary_hit_rate_at_k: Dict[str, Dict[str, float | None]] = {}
+    for k in metric_ks:
+        secondary_hit_rate_at_k[f"k{k}"] = {
+            "strict_page_overlap": _hit_rate_at_k(strict_rank_lists, k),
+            "doc_only": _hit_rate_at_k(doc_only_rank_lists, k),
+            "near_page_tolerance": _hit_rate_at_k(near_page_rank_lists, k),
+        }
+
+    primary_secondary = secondary_hit_rate_at_k.get(
+        f"k{primary_k}",
+        {
+            "strict_page_overlap": None,
+            "doc_only": None,
+            "near_page_tolerance": None,
+        },
+    )
     retrieval_summary = {
         "scoring_scope": "answerable_with_non_empty_gold_only",
         "metric_ks": metric_ks,
@@ -332,6 +420,11 @@ def main() -> None:
         "recall_at_k": primary_metrics.get("recall"),
         "mrr_at_k": primary_metrics.get("mrr"),
         "ndcg_at_k": primary_metrics.get("ndcg"),
+        "secondary_diagnostics": {
+            "near_page_tolerance": args.near_page_tolerance,
+            "primary_k_hit_rate": primary_secondary,
+            "hit_rate_at_k": secondary_hit_rate_at_k,
+        },
     }
 
     answer_summary = {
@@ -364,6 +457,7 @@ def main() -> None:
             "k": args.k,
             "ks": metric_ks,
             "retrieval_depth": retrieval_depth,
+            "near_page_tolerance": args.near_page_tolerance,
             "k0": args.k0,
             "candidate_multiplier": args.candidate_multiplier,
             "fusion": fusion,

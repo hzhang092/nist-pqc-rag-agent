@@ -35,6 +35,30 @@ def hit_matches_gold(hit: dict, gold: dict) -> bool:
     )
 
 
+def hit_matches_gold_doc_only(hit: dict, gold: dict) -> bool:
+    """Relaxed diagnostic: relevant iff document IDs match."""
+    return hit.get("doc_id") == gold.get("doc_id")
+
+
+def hit_matches_gold_with_tolerance(hit: dict, gold: dict, page_tolerance: int = 1) -> bool:
+    """
+    Relaxed diagnostic: doc_id match plus overlap with ±page_tolerance slack.
+    """
+    if page_tolerance < 0:
+        raise ValueError("page_tolerance must be >= 0")
+    if hit.get("doc_id") != gold.get("doc_id"):
+        return False
+
+    gold_start = int(gold.get("start_page", 0)) - page_tolerance
+    gold_end = int(gold.get("end_page", 0)) + page_tolerance
+    return spans_overlap(
+        int(hit.get("start_page", 0)),
+        int(hit.get("end_page", 0)),
+        gold_start,
+        gold_end,
+    )
+
+
 def _unique_gold_gain_vector(hits: List[dict], gold: List[dict], k: int) -> List[int]:
     """
     Binary gain vector where each gold span can contribute at most once.

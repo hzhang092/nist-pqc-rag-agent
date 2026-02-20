@@ -5,6 +5,8 @@ from eval.metrics import (
     compute_retrieval_metrics_by_ks,
     evaluate_answer_payload,
     hit_matches_gold,
+    hit_matches_gold_doc_only,
+    hit_matches_gold_with_tolerance,
 )
 from rag.types import REFUSAL_TEXT
 
@@ -82,3 +84,20 @@ def test_compute_retrieval_metrics_by_ks_returns_all_requested_ks():
     assert set(by_k.keys()) == {"k1", "k2", "k3"}
     assert by_k["k1"]["mrr_at_k"] == pytest.approx(0.0)
     assert by_k["k2"]["mrr_at_k"] == pytest.approx(0.5)
+
+
+def test_hit_matches_gold_doc_only_and_tolerance():
+    gold = {"doc_id": "NIST.FIPS.203", "start_page": 20, "end_page": 20}
+    same_doc_far_page = {"doc_id": "NIST.FIPS.203", "start_page": 30, "end_page": 30}
+    same_doc_near_page = {"doc_id": "NIST.FIPS.203", "start_page": 21, "end_page": 21}
+    wrong_doc_near_page = {"doc_id": "NIST.FIPS.204", "start_page": 21, "end_page": 21}
+
+    assert hit_matches_gold_doc_only(same_doc_far_page, gold) is True
+    assert hit_matches_gold_doc_only(wrong_doc_near_page, gold) is False
+
+    assert hit_matches_gold_with_tolerance(same_doc_near_page, gold, page_tolerance=1) is True
+    assert hit_matches_gold_with_tolerance(same_doc_far_page, gold, page_tolerance=1) is False
+    assert hit_matches_gold_with_tolerance(wrong_doc_near_page, gold, page_tolerance=1) is False
+
+    with pytest.raises(ValueError, match="page_tolerance"):
+        hit_matches_gold_with_tolerance(same_doc_near_page, gold, page_tolerance=-1)

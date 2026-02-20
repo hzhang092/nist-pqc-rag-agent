@@ -1,0 +1,26 @@
+services:
+  rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nist-pqc-rag-agent:dev
+    working_dir: /app
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+      LLAMA_CLOUD_API_KEY: ${LLAMA_CLOUD_API_KEY:-}
+      VECTOR_BACKEND: ${VECTOR_BACKEND:-faiss}
+      RETRIEVAL_MODE: ${RETRIEVAL_MODE:-hybrid}
+      TOP_K: ${TOP_K:-8}
+      PYTHONHASHSEED: ${PYTHONHASHSEED:-0}
+      HF_HOME: /root/.cache/huggingface
+      TRANSFORMERS_CACHE: /root/.cache/huggingface
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./runs:/app/runs
+      - hf_cache:/root/.cache/huggingface
+    command: ["python", "-m", "rag.search", "ML-KEM key generation"]
+
+volumes:
+  hf_cache:

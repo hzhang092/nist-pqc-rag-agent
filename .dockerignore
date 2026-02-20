@@ -1,0 +1,30 @@
+.git
+.gitignore
+.venv
+venv
+.env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+
+# Local artifacts/logs
+runs
+reports/eval
+reports/trashed
+
+# Processed/indexed data are generated at runtime and mounted as volumes
+data/processed
+
+# Keep raw PDFs available for ingestion when needed
+# data/raw_pdfs is intentionally not ignored
+
+# IDE/editor noise
+.vscode
+.idea
+*.swp
+*.swo

@@ -1,7 +1,15 @@
-llama-parse
-python-dotenv
-nest_asyncio
-google-genai
-rank-bm25
-langchain-core
-langgraph
+faiss-cpu==1.13.2
+google-genai==1.63.0
+langchain-core==1.2.13
+langgraph==1.0.8
+llama-parse==0.6.94
+nest-asyncio==1.6.0
+numpy==2.4.2
+pypdf==6.5.0
+python-dotenv==1.2.1
+rank-bm25==0.2.2
+sentence-transformers==5.2.2
+tqdm==4.67.3
+
+# Test/runtime sanity checks run inside container
+pytest==9.0.2

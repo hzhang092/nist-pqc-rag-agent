@@ -28,6 +28,54 @@ Use the project conda environment:
 conda activate eleven
 ```
 
+## Docker quickstart
+
+1) Create runtime env file from template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2) Build the image:
+
+```powershell
+docker compose build rag
+```
+
+3) Run deterministic ingestion/index pipeline in containers:
+
+```powershell
+docker compose run --rm rag python -m rag.ingest
+docker compose run --rm rag python scripts/clean_pages.py
+docker compose run --rm rag python scripts/make_chunks.py
+docker compose run --rm rag python -m rag.embed
+docker compose run --rm rag python -m rag.index_faiss
+docker compose run --rm rag python -m rag.index_bm25
+```
+
+4) Run retrieval/eval from Docker:
+
+```powershell
+docker compose run --rm rag python -m rag.search "ML-KEM key generation"
+docker compose run --rm rag python -m eval.run
+```
+
+5) Optional task runner (PowerShell):
+
+```powershell
+./scripts/docker.ps1 -Task build
+./scripts/docker.ps1 -Task pipeline
+./scripts/docker.ps1 -Task search -Query "Algorithm 19 ML-KEM.KeyGen"
+./scripts/docker.ps1 -Task ask -Query "What does FIPS 203 specify for ML-KEM key generation?"
+./scripts/docker.ps1 -Task test
+```
+
+Notes:
+- `docker-compose.yml` mounts `data/`, `reports/`, and `runs/` so generated artifacts persist on host.
+- Hugging Face model cache is persisted in named volume `hf_cache`.
+- Docker image pins CPU-only PyTorch (`torch==2.7.0` from PyTorch CPU index) to avoid CUDA/NVIDIA wheel downloads.
+- Keep secrets in `.env` only; never commit `.env`.
+
 ### 1) Build BM25 artifact (needed for hybrid retrieval)
 
 ```powershell

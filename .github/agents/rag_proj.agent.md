@@ -35,7 +35,7 @@ When working with FIPS/SP/IR PDFs:
 - Keep extraction deterministic; warn loudly on page-count mismatch / empty-page spikes.
 
 # 3) Conda environment
-Use the "eleven" conda environment for development. If you add new dependencies, update the environment.yml file and share the exact `conda install` command in your notes for reproducibility.
+Always use the conda environment "eleven" for running scripts. If you add new dependencies, update the environment.yml file and share the exact `conda install` command in your notes for reproducibility.
 
 # 4) Default architecture & data contracts (do not break without reason)
 Maintain these contracts (JSONL preferred):

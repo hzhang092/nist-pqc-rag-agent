@@ -46,7 +46,6 @@ except Exception:
         """
         return json.dumps(obj, ensure_ascii=False)
 
-from sentence_transformers import SentenceTransformer
 
 CHUNKS_PATH = Path("data/processed/chunks.jsonl")
 OUT_DIR = Path("data/processed")
@@ -58,6 +57,45 @@ BATCH_SIZE = 64
 EMB_NPY = OUT_DIR / "embeddings.npy"
 STORE_JSONL = OUT_DIR / "chunk_store.jsonl"
 META_JSON = OUT_DIR / "emb_meta.json"
+
+
+def build_store_records(chunks: list[dict]) -> tuple[list[str], list[dict]]:
+    """Builds (texts, store_records) with vector_id aligned to embedding row index.
+
+    FAISS returns row indices (0..n-1) for `IndexFlat*` indices. We persist a
+    parallel JSONL store keyed by `vector_id` so we can map FAISS hits back to
+    chunk metadata + original text.
+
+    Important invariant:
+        store_records[i]["vector_id"] == i
+        len(texts) == len(store_records)
+    """
+    texts: list[str] = []
+    store_records: list[dict] = []
+
+    vector_id = 0
+    for ch in chunks:
+        text = str(ch.get("text", "")).strip()
+        if not text:
+            continue
+
+        texts.append(text)
+        store_records.append(
+            {
+                "vector_id": vector_id,
+                "chunk_id": ch.get("chunk_id"),
+                "doc_id": ch.get("doc_id"),
+                "start_page": ch.get("start_page", ch.get("page_number")),
+                "end_page": ch.get("end_page", ch.get("page_number")),
+                "page_number": ch.get("page_number"),
+                "char_len": ch.get("char_len"),
+                "approx_tokens": ch.get("approx_tokens"),
+                "text": text,
+            }
+        )
+        vector_id += 1
+
+    return texts, store_records
 
 def load_chunks(path: Path) -> list[dict]:
     """Loads document chunks from a JSONL file."""
@@ -85,29 +123,17 @@ def main():
     chunks = load_chunks(CHUNKS_PATH)
     assert chunks, "No chunks loaded."
 
-    # Build vector_id mapping (int IDs are required by most ANN indexes)
-    texts = []
-    store_records = []
-    for vid, ch in enumerate(chunks):
-        text = ch["text"].strip()
-        if not text:
-            continue
-
-        texts.append(text)
-
-        store_records.append({
-            "vector_id": vid,
-            "chunk_id": ch.get("chunk_id"),
-            "doc_id": ch.get("doc_id"),
-            "start_page": ch.get("start_page", ch.get("page_number")),
-            "end_page": ch.get("end_page", ch.get("page_number")),
-            "page_number": ch.get("page_number"),
-            "char_len": ch.get("char_len"),
-            "approx_tokens": ch.get("approx_tokens"),
-            "text": ch["text"]
-        })
+    # Build vector_id mapping (FAISS row ids) + chunk store sidecar.
+    texts, store_records = build_store_records(chunks)
 
     print(f"Loaded {len(texts)} non-empty chunks")
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing dependency 'sentence-transformers'. Install it to run embedding."
+        ) from exc
 
     model = SentenceTransformer(MODEL_NAME)
 
@@ -119,6 +145,14 @@ def main():
         convert_to_numpy=True,
         normalize_embeddings=True,
     ).astype(np.float32)
+
+    if embs.shape[0] != len(store_records):
+        raise ValueError(
+            "Embedding/store alignment failure: "
+            f"emb_rows={embs.shape[0]} store_rows={len(store_records)}"
+        )
+    if store_records and store_records[-1]["vector_id"] != len(store_records) - 1:
+        raise ValueError("chunk_store vector_id must be contiguous starting at 0")
 
     np.save(EMB_NPY, embs)
 

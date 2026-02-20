@@ -24,6 +24,7 @@ deterministic pipeline, citation-first answers, bounded agent loops, and eval-dr
 - Retrieval must be swappable: app code depends on `Retriever` interface, not FAISS details.
 - Default retrieval: hybrid BM25 + vector + Reciprocal Rank Fusion (RRF).
 - Agent must be bounded: step budget + tool-call budget + stop rules.
+- run scripts in codna environment "eleven"
 
 ## What to output for any request
 When the user asks you to do something:

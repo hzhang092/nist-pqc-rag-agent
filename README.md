@@ -1,6 +1,12 @@
 # nist-pqc-rag-agent
 PQC Standards Navigator — Agentic RAG over NIST PDFs with citations + eval harness.
 
+## Project overview
+- Implements a retrieval-augmented generation (RAG) system over NIST's post-quantum cryptography standardization documents.
+- Uses a LangGraph agent to perform tool-using question answering with retrieval and citation grounding.
+- Provides a CLI for retrieval and QA, plus an evaluation suite for tuning retrieval performance.
+
+## Key NIST document sources in the project
 [NIST's Post-Quantum Cryptography Standardization Project](https://csrc.nist.gov/projects/post-quantum-cryptography)
 
 [NIST Releases First 3 Finalized Post-Quantum Encryption Standards](https://www.nist.gov/news-events/news/2024/08/nist-releases-first-3-finalized-post-quantum-encryption-standards?utm_source=chatgpt.com)
@@ -62,6 +68,12 @@ python scripts/mini_retrieval_sanity.py
 Outputs:
 - reports/mini_retrieval_sanity.json
 - reports/mini_retrieval_sanity.md
+
+## metrics reference
+### Retrieval metrics
+- `Recall@k`: Proportion of questions for which at least one relevant document is in the top-k retrieved results.
+- `MRR@k` (Mean Reciprocal Rank): Average of the reciprocal ranks of the first relevant document across all questions, considering only the top-k results.
+- `nDCG@k` (normalized Discounted Cumulative Gain): Evaluates the quality of the ranked retrieval results by considering the relevance and position of retrieved documents, normalized to a scale of 0 to 1.
 
 ## Scripts reference
 

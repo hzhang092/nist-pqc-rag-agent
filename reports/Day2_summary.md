@@ -20,6 +20,12 @@ I added a single settings surface for Day 2 behavior, including:
 - Answering knobs: max evidence chunks, max context chars, minimum evidence hits, strict citation enforcement.
 - LLM knobs: default Gemini model (`gemini-3-flash-preview`), temperature 0, plus debugging flags for `--json` and `--show-evidence`.
 
+**Detailed mechanism implemented:**
+- Implemented a frozen `Settings` dataclass with typed defaults and env parsing helpers: `_env_str`, `_env_int`, `_env_bool`, `_env_int_any`.
+- Wired retrieval controls directly to env-backed fields (`RETRIEVAL_MODE`, `RETRIEVAL_QUERY_FUSION`, `RETRIEVAL_RRF_K0`, `RETRIEVAL_CANDIDATE_MULTIPLIER`, `RETRIEVAL_ENABLE_RERANK`, `RETRIEVAL_RERANK_POOL`).
+- Wired evidence/answer controls (`ASK_MAX_CONTEXT_CHUNKS`, `ASK_MAX_CONTEXT_CHARS`, `ASK_MIN_EVIDENCE_HITS`, `ASK_REQUIRE_CITATIONS`, `ASK_INCLUDE_NEIGHBOR_CHUNKS`, `ASK_NEIGHBOR_WINDOW`).
+- Added `validate_settings()` guardrails (allowed backend/mode checks, positive bound checks) invoked by CLI entrypoints before retrieval/generation.
+
 **Why:** This makes the pipeline tunable without editing core logic, supports a “swappable backend” architecture, and keeps behavior reproducible across runs/environments.
 
 ---
@@ -35,6 +41,15 @@ And added validation utilities to enforce invariants:
 - refusal ⇒ exact refusal string + `citations=[]`
 - non-refusal ⇒ citations required
 - optional but enabled: inline markers `[c#]` required and must correspond to real citation keys
+
+**Detailed mechanism implemented:**
+- Standardized refusal sentinel as `REFUSAL_TEXT = "not found in provided docs"`.
+- Added regex-based marker extraction (`\[(c\d+)\]`) via `extract_citation_keys()`.
+- Enforced page-span sanity per citation (`start_page/end_page > 0`, `start_page <= end_page`).
+- Enforced refusal/non-refusal invariants in `validate_answer()`:
+  - refusal must return empty citations,
+  - non-refusal must include citations when required,
+  - optional strict mode requires inline markers and rejects unknown keys.
 
 **Why:** This makes “citation groundedness” testable and machine-checkable (for later eval harness + agent tool calls).
 
@@ -62,6 +77,22 @@ This is the core Day 2 engine.
 - Every sentence must contain at least one marker `[c#]`
 - Markers must exist in the evidence-derived `key_to_citation` map
 - If the model violates rules, the system refuses (safe default)
+
+**Detailed mechanism implemented:**
+- `select_evidence()`:
+  - deduped raw hits by `chunk_id` while keeping max score,
+  - sorted deterministically with `(-score, doc_id, start_page, end_page, chunk_id)`,
+  - took primary hits, then optionally expanded with neighbor chunks using `chunk_id <-> vector_id` maps from `chunk_store.jsonl`,
+  - enforced both chunk-count and character budgets (`ASK_MAX_CONTEXT_CHUNKS`, `ASK_MAX_CONTEXT_CHARS`).
+- `build_context_and_citations()`:
+  - assigned stable citation keys in order (`c1..cN`),
+  - emitted context headers with `doc_id`, page span, and `chunk_id` for each evidence block.
+- Prompt contract was explicit and strict:
+  - 6 hard rules, including one citation per sentence and exact refusal text on insufficient evidence.
+- `enforce_inline_citations()`:
+  - normalized weak refusal variants to canonical refusal,
+  - rejected answers with missing markers, unknown markers, or uncited sentences,
+  - returned only cited keys actually used in text (sorted numerically).
 
 **Why:** This turns the model into a *summarizer of evidence*, not a “freeform explainer,” which is essential for standards PDFs.
 
@@ -97,6 +128,11 @@ Updated `rag/rag_answer.py` to make algorithm answers reliable:
 - Added evidence prettification for standards pseudocode (insert newlines before `1:`, `2:`, `for (...)` etc.) so algorithm steps are readable to the model.
 - Added a deterministic safety net for Algorithm questions: if the model refuses but the evidence chunk contains numbered steps, extract and return the steps directly **with valid inline citations**, still passing the strict `enforce_inline_citations` contract.
 
+**Detailed mechanism implemented:**
+- `_prettify_evidence_text()` now inserts line breaks before numbered steps (`\d+:`) and `for (...)` blocks when algorithm-like patterns are detected.
+- `_algorithm_fallback_answer()` triggers only for `Algorithm N` questions, finds evidence containing `Algorithm N` + step markers, extracts numbered steps with `_extract_algorithm_steps()`, and emits cited bullet lines (`- k: ... [c#].`).
+- Fallback output is still validated by the same strict citation checker, so this is deterministic but contract-safe.
+
 This turns “algorithm blocks + PDF layout weirdness” into a stable, testable path rather than a prompt-luck issue.
 
 ### 4) Gemini LLM integration (free tier) in `rag/llm/gemini.py`
@@ -107,6 +143,13 @@ I integrated Gemini via the `google-genai` SDK and set the default model to:
 This avoided the earlier quota pitfall where `gemini-2.5-pro` effectively had a free-tier quota limit of 0.
 
 I also made the CLI output include the model name (in `--show-evidence` and/or `--json`) for reproducibility.
+
+**Detailed mechanism implemented:**
+- Loaded `.env` (when available), then resolved credentials via `GEMINI_API_KEY`; fails fast with a clear error if missing.
+- Built a reusable `generate_fn(prompt)->text` wrapper around `google.genai.Client`.
+- Passed `GenerateContentConfig(temperature=SETTINGS.LLM_TEMPERATURE)` for deterministic generation behavior.
+- Added retry with exponential backoff for transient/free-tier errors (3 attempts: 0.5s, 1s, 2s).
+- Exposed `get_model_name()` and surfaced the effective model name in CLI outputs/payloads.
 
 **Why:** Day 2 needed a working free-tier LLM backend to complete the end-to-end “ask” flow.
 
@@ -124,6 +167,16 @@ I added lexical retrieval because dense embeddings struggle with spec-heavy toke
   - hyphen tokens (`ML-KEM-768`)
   - acronyms / constants (`SHAKE128`, `NTT`)
 
+**Detailed mechanism implemented:**
+- `rag/index_bm25.py` builds artifact from `chunk_store.jsonl` sorted by `vector_id` to keep deterministic doc ordering.
+- Tokenizer regex keeps compound tokens (`[-._]`) and expands them into component parts (e.g., `ml-kem.keygen` plus `ml`, `kem`, `keygen`).
+- For each chunk/doc:
+  - computed term frequency (`tf`) and document length,
+  - built postings lists as `[doc_idx, tf]`,
+  - computed IDF with BM25-style smoothing: `log(1 + (N - df + 0.5)/(df + 0.5))`.
+- Persisted a single `bm25.pkl` artifact containing params, vocab/idf, postings, doc lengths, and doc metadata (`chunk_id`, `doc_id`, `start_page`, `end_page`, `text`, `vector_id`).
+- `BM25Retriever.search()` scores query terms with `k1/b` normalization and returns `ChunkHit` objects with full citation fields.
+
 **Why:** Standards PDFs depend heavily on exact identifiers; lexical retrieval recovers precise sections that dense vectors often miss.
 
 ---
@@ -140,6 +193,15 @@ Then fused results using **Reciprocal Rank Fusion (RRF)**:
 - Final stable sort by:
   - `-rrf_score`, then `(doc_id, start_page, chunk_id)`
 
+**Detailed mechanism implemented:**
+- Per variant, fetched from both retrievers with expanded depth:
+  - `per_source_k = max(top_k * candidate_multiplier, top_k)`.
+- Fused all ranking lists with `rrf_fuse()`:
+  - score update rule `+ 1/(k0 + rank)` (rank is 1-indexed),
+  - representative chunk per `chunk_id` selected with deterministic tie-break.
+- Used stable fused ordering by `(-rrf_score, doc_id, start_page, chunk_id)`.
+- Applied optional rerank on a larger fused pool (`fused_pool = max(top_k, rerank_pool)`) before truncating to final `top_k`.
+
 **Why:** Hybrid retrieval improves recall of exact spec sections while retaining semantic matching.
 
 ---
@@ -153,6 +215,13 @@ I added deterministic query rewriting/expansion (“query fusion”) to improve 
 
 Then ran hybrid retrieval across variants and merged again via RRF.
 
+**Detailed mechanism implemented:**
+- Built variants with deterministic rules only (no LLM rewrite path), including:
+  - technical-token extraction via regex (`[A-Za-z0-9]+(?:[-._][A-Za-z0-9]+)+`),
+  - pattern-specific expansions like `ML-KEM key generation -> ML-KEM.KeyGen key generation`,
+  - algorithm expansions (`Algorithm N`, `Algorithm N ML-KEM.KeyGen`) when detected.
+- Performed stable de-dup while preserving insertion order, so variant ordering is reproducible run-to-run.
+
 **Why:** This is a lightweight, deterministic version of RAG-Fusion: it increases recall of the right spec blocks without using an LLM for rewriting (keeps cost + nondeterminism down).
 
 ---
@@ -162,6 +231,15 @@ After fusion, I added an optional lightweight rerank stage:
 - prioritize hits containing **exact technical tokens** from the query
 - then apply a lexical scoring signal (BM25-style score or BM25’s `score_text`)
 - stable tie-breaking maintained
+
+**Detailed mechanism implemented:**
+- Extracted lowercase technical query tokens once, then flagged each hit by exact token presence in hit text.
+- Scored each candidate with `BM25Retriever.score_text(query, hit.text)` using the same lexical statistics as indexed retrieval.
+- Ranked by:
+  - exact-token match flag (descending),
+  - lexical score (descending),
+  - deterministic tie-break (`doc_id`, `start_page`, `chunk_id`).
+- Returned top `k` after reranking; disabling rerank cleanly falls back to pure RRF order.
 
 **Why:** This nudges “actual algorithm text” above “overview/differences” sections, which is common when dense search returns semantically related but non-authoritative chunks.
 

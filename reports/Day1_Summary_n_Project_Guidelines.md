@@ -37,9 +37,30 @@ Rationale: the current set already supports both (1) algorithm-definition questi
 - `data/processed/pages.jsonl` — page-addressable records: `(doc_id, page_number, text, ...)`
 - `data/processed/*_parsed.json` — intermediate per-document parse artifacts for traceability/debugging
 
+**Detailed mechanism implemented:**
+- Enumerated input PDFs with deterministic ordering via `sorted(data/raw_pdfs/*.pdf)`.
+- For each PDF, used `pypdf` to read true page count, then parsed with `LlamaParse(result_type="markdown")`.
+- Set parsing instruction to preserve technical structure (tables + LaTeX math).
+- Ran a page-count sanity check (`parsed_pages` vs true PDF pages) and emitted warnings on mismatch.
+- Wrote both:
+  - per-document parsed JSON (`*_parsed.json`) for debugging,
+  - unified `pages.jsonl` records with `doc_id`, `source_path`, `page_number`, `text`.
+
 ### 3.2 Cleaning (normalize PDF artifacts)
 - `pages.jsonl` → `pages_clean.jsonl`
 - Purpose: improve chunk boundaries and embedding signal by reducing layout noise.
+
+**Detailed mechanism implemented:**
+- Unicode normalization with `NFKC`.
+- Removed soft hyphens / zero-width characters and replaced ligatures (`ﬁ`→`fi`, `ﬂ`→`fl`).
+- Normalized whitespace: standardized line endings and collapsed repeated spaces/tabs (including extra spaces).
+- De-hyphenated wrapped words across line breaks (e.g., `algo-\nrithm` → `algorithm`).
+- Removed standalone page-number lines (e.g., `12`, `Page 12`).
+- Detected repeated headers/footers per document using top/bottom line frequency (canonicalized lines, threshold ratio).
+- Applied structure-aware line joining:
+  - joined only wrapped prose lines,
+  - preserved line structure for tables, algorithms/pseudocode, and math blocks.
+- Collapsed multiple blank-line runs to a single blank line.
 
 ### 3.3 Chunking (page-aware RAG-ready chunks)
 - `pages_clean.jsonl` → `chunks.jsonl`
@@ -47,12 +68,31 @@ Rationale: the current set already supports both (1) algorithm-definition questi
   - `chunk_id`, `doc_id`, `start_page`, `end_page`, `text`
   - plus diagnostics (`char_len`, `approx_tokens`) for tuning.
 
+**Detailed mechanism implemented:**
+- Split each page into blocks by blank lines.
+- Classified blocks with heuristics (table / algorithm-code / math):
+  - mostly verbatim blocks kept line-by-line,
+  - prose blocks joined to undo PDF hard wraps.
+- Packed blocks greedily into chunks with configured bounds:
+  - `target_chars=1400`, `min_chars=250`, `max_chars=2200`, `overlap_blocks=1`.
+- Used stable chunk IDs per page: `{doc_id}::p{page:04d}::c{chunk:03d}`.
+- Preserved citation fields on every chunk: `doc_id`, `start_page`, `end_page` (Day 1: page-local chunks so `start_page=end_page=page_number`).
+
 ### 3.4 Embedding (chunks → dense vectors)
 **Tooling choice:** `sentence-transformers` (local embeddings; reproducible; avoids API costs/rate limits).  
 **Outputs:**
 - `embeddings.npy` — float32 matrix (N × dim)
 - `emb_meta.json` — embedding config (model_name, dim, normalization flags, etc.)
 - `chunk_store.jsonl` — maps `vector_id` → metadata + **text** (RAG-ready)
+
+**Detailed mechanism implemented:**
+- Model: `BAAI/bge-base-en-v1.5`, batch size `64`.
+- Encoded non-empty chunk text with `normalize_embeddings=True` and cast to `float32`.
+- Built deterministic `vector_id` mapping aligned to embedding row index (`vector_id == row_id`).
+- Persisted:
+  - `embeddings.npy` (dense matrix),
+  - `chunk_store.jsonl` (vector-to-chunk/text mapping),
+  - `emb_meta.json` (model name, dim, normalization flag, paths).
 
 ### 3.5 Indexing + Search (FAISS baseline retrieval)
 **Tooling choice:** **FAISS (faiss-cpu)**, chosen for:
@@ -63,6 +103,15 @@ Rationale: the current set already supports both (1) algorithm-definition questi
 **Outputs:**
 - `faiss.index`
 - CLI search validated retrieval quality for real queries (e.g., ML-KEM definition and IR 8547 migration considerations).
+
+**Detailed mechanism implemented:**
+- Loaded embeddings + dimension metadata, asserted shape consistency.
+- Applied L2 normalization before indexing.
+- Built FAISS with `faiss.IndexFlatIP(dim)`:
+  - exact brute-force nearest-neighbor search (no ANN approximation),
+  - inner product on normalized vectors to approximate cosine similarity.
+- Added all vectors and persisted `faiss.index`.
+- Search path embedded query with the same model + normalization, retrieved an expanded candidate pool, then deduped by `(doc_id, start_page, end_page)` before returning top hits.
 
 ---
 

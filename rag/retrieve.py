@@ -104,7 +104,7 @@ def query_variants(query: str) -> List[str]:
         variants.append(" ".join(technical_tokens))
 
     lowered = original.lower()
-    if "key generation" in lowered:
+    if "ml-kem" in lowered and "key generation" in lowered:
         variants.append("ML-KEM.KeyGen key generation")
 
     if "ml-dsa" in lowered and "signing" in lowered:

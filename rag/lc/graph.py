@@ -19,15 +19,29 @@ CLI flags:
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from langgraph.graph import END, StateGraph
 
+# Allow direct script execution: `python rag/lc/graph.py`
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
 from rag.config import SETTINGS
 
-from . import tools as lc_tools
-from .state import AgentState, Citation, EvidenceItem, Plan
-from .state_utils import add_trace, init_state, set_answer, set_evidence, set_final_answer, set_plan
+try:
+    from . import tools as lc_tools
+    from .state import AgentState, Citation, EvidenceItem, Plan
+    from .state_utils import add_trace, init_state, set_answer, set_evidence, set_final_answer, set_plan
+except ImportError:
+    from rag.lc import tools as lc_tools
+    from rag.lc.state import AgentState, Citation, EvidenceItem, Plan
+    from rag.lc.state_utils import add_trace, init_state, set_answer, set_evidence, set_final_answer, set_plan
 
 
 MAX_STEPS = SETTINGS.AGENT_MAX_STEPS
@@ -680,3 +694,26 @@ def run_agent(question: str) -> AgentState:
     state = init_state(question)
     recursion_limit = max(20, MAX_STEPS * 4)
     return GRAPH.invoke(state, config={"recursion_limit": recursion_limit})
+
+if __name__ == "__main__":
+    # Render graph image for terminal usage.
+    try:
+        png_bytes = GRAPH.get_graph().draw_mermaid_png()
+        out_path = Path.cwd() / "runs" / "agent" / "graph.png"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(png_bytes)
+        print(f"Graph image saved to: {out_path}")
+
+        try:
+            if sys.platform.startswith("win"):
+                import os
+
+                os.startfile(str(out_path))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(out_path)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(out_path)], check=False)
+        except Exception as open_err:
+            print(f"Saved image but could not auto-open it: {open_err}")
+    except Exception:
+        print(GRAPH.get_graph().draw_mermaid())

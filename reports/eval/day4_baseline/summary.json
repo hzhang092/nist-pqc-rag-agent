@@ -20,27 +20,27 @@
     "unlabeled_answerable_questions": 0
   },
   "dataset_path": "eval\\day4\\questions.jsonl",
-  "generated_at_utc": "2026-02-19T23:47:56.599183+00:00",
+  "generated_at_utc": "2026-03-01T02:30:49.683700+00:00",
   "retrieval": {
     "at_k": {
       "k1": {
-        "mrr": 0.16666666666666666,
-        "ndcg": 0.16666666666666666,
-        "recall": 0.16666666666666666
+        "mrr": 0.25,
+        "ndcg": 0.25,
+        "recall": 0.25
       },
       "k3": {
-        "mrr": 0.23611111111111113,
-        "ndcg": 0.26091081279762146,
+        "mrr": 0.2777777777777778,
+        "ndcg": 0.2916666666666667,
         "recall": 0.3333333333333333
       },
       "k5": {
-        "mrr": 0.2569444444444445,
-        "ndcg": 0.2829164896786707,
+        "mrr": 0.2986111111111111,
+        "ndcg": 0.31367234354771595,
         "recall": 0.375
       },
       "k8": {
-        "mrr": 0.2569444444444445,
-        "ndcg": 0.3011171094135177,
+        "mrr": 0.2986111111111111,
+        "ndcg": 0.33187296328256294,
         "recall": 0.4166666666666667
       }
     },
@@ -50,9 +50,9 @@
       5,
       8
     ],
-    "mrr_at_k": 0.2569444444444445,
+    "mrr_at_k": 0.2986111111111111,
     "n_questions": 12,
-    "ndcg_at_k": 0.3011171094135177,
+    "ndcg_at_k": 0.33187296328256294,
     "primary_k": 8,
     "recall_at_k": 0.4166666666666667,
     "scoring_scope": "answerable_with_non_empty_gold_only",
@@ -60,8 +60,8 @@
       "hit_rate_at_k": {
         "k1": {
           "doc_only": 0.75,
-          "near_page_tolerance": 0.3333333333333333,
-          "strict_page_overlap": 0.16666666666666666
+          "near_page_tolerance": 0.4166666666666667,
+          "strict_page_overlap": 0.25
         },
         "k3": {
           "doc_only": 0.8333333333333334,
@@ -92,7 +92,7 @@
     "skipped_unlabeled_answerable_qids": []
   },
   "run_config": {
-    "allow_unlabeled": false,
+    "allow_unlabeled": true,
     "backend": "faiss",
     "candidate_multiplier": 4,
     "fusion": true,

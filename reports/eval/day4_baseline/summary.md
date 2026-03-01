@@ -1,6 +1,6 @@
 # Evaluation Summary
 
-- generated_at_utc: 2026-02-19T23:47:56.599183+00:00
+- generated_at_utc: 2026-03-01T02:30:49.683700+00:00
 - dataset: eval\day4\questions.jsonl
 - total_questions: 13
 - answerable_questions: 12
@@ -12,18 +12,18 @@
 - scoring_scope: answerable_with_non_empty_gold_only
 - primary_k: 8
 - Recall@k: 0.4167
-- MRR@k: 0.2569
-- nDCG@k: 0.3011
+- MRR@k: 0.2986
+- nDCG@k: 0.3319
 
 ### Retrieval By K
-- k1: recall=0.1667, mrr=0.1667, ndcg=0.1667
-- k3: recall=0.3333, mrr=0.2361, ndcg=0.2609
-- k5: recall=0.3750, mrr=0.2569, ndcg=0.2829
-- k8: recall=0.4167, mrr=0.2569, ndcg=0.3011
+- k1: recall=0.2500, mrr=0.2500, ndcg=0.2500
+- k3: recall=0.3333, mrr=0.2778, ndcg=0.2917
+- k5: recall=0.3750, mrr=0.2986, ndcg=0.3137
+- k8: recall=0.4167, mrr=0.2986, ndcg=0.3319
 
 ### Secondary Diagnostics
 - near_page_tolerance: 1
-- k1: strict=0.1667, doc_only=0.7500, near_page=0.3333
+- k1: strict=0.2500, doc_only=0.7500, near_page=0.4167
 - k3: strict=0.3333, doc_only=0.8333, near_page=0.5000
 - k5: strict=0.4167, doc_only=0.8333, near_page=0.5833
 - k8: strict=0.4167, doc_only=0.8333, near_page=0.5833

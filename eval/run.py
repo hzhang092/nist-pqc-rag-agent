@@ -5,13 +5,33 @@ Usage:
     python -m eval.run
     python -m eval.run --dataset eval/day4/questions.jsonl --allow-unlabeled
     python -m eval.run --dataset eval/day4/questions.jsonl --allow-unlabeled --with-answers
-    python -m eval.run --with-answers
+    python -m eval.run --outdir reports/eval
+
+Outputs are timestamped and written into a single output directory.
+
+Flags:
+    --dataset: path to JSONL dataset of questions with labels and gold spans
+    --outdir: directory to write output artifacts (per-question JSONL, summary JSON, summary MD)
+    --mode: retrieval mode to pass to rag.ask (default: base, hybrid)
+    --backend: vector database backend to pass to rag.ask (default: SETTINGS.VECTOR_BACKEND)
+    --k: primary retrieval depth and primary @k for metrics (default: SETTINGS.TOP_K)
+    --ks: comma-separated k values for retrieval metrics (default: "1,3,5,8")
+    --k0: k0 parameter for RRF retrieval (default: SETTINGS.RETRIEVAL_RRF_K0)
+    --candidate-multiplier: candidate_multiplier for retrieval (default: SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER)
+    --fusion / --no-fusion: enable or disable query fusion in retrieval (default: enabled)
+    --rerank / --no-rerank: enable or disable rerank in retrieval (default: enabled)
+    --rerank-pool: k value for retrieval rerank pool (default: SETTINGS.RETRIEVAL_RERANK_POOL)
+    --near-page-tolerance: page slack for relaxed diagnostics (doc match + overlap within ±N pages, default: 1)
+    --allow-unlabeled: allow answerable=true questions with empty gold spans (these are skipped in retrieval metrics, default: false)
+    --with-answers: also run rag.ask and score citation/refusal metrics (default: false)
+    --debug: pass debug flag through eval retrieval adapter (default: false)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -147,13 +167,61 @@ def _hit_rate_at_k(rank_lists: List[List[int]], k: int) -> float | None:
     return hits / float(len(rank_lists))
 
 
+def _has_hit_in_top_k(ranks: List[int], k: int) -> bool:
+    return any(rank <= k for rank in ranks)
+
+
+def _slugify_for_filename(text: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", (text or "").strip())
+    slug = re.sub(r"-{2,}", "-", slug).strip("._-")
+    return slug if slug else "eval"
+
+
+def _timestamp_slug(dt_utc: datetime) -> str:
+    return dt_utc.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _build_run_id(dataset_path: str | Path, generated_at_utc: datetime) -> str:
+    dataset_stem = _slugify_for_filename(Path(dataset_path).stem)
+    return f"{dataset_stem}_{_timestamp_slug(generated_at_utc)}"
+
+
+def _build_artifact_paths(outdir: Path, run_id: str) -> Dict[str, Path]:
+    return {
+        "per_question": outdir / f"{run_id}_per_question.jsonl",
+        "summary_json": outdir / f"{run_id}_summary.json",
+        "summary_md": outdir / f"{run_id}_summary.md",
+    }
+
+
+def _format_gold_spans(gold: List[dict]) -> str:
+    if not gold:
+        return "[]"
+    return ", ".join(
+        f"{g.get('doc_id', '')}:p{int(g.get('start_page', 0))}-p{int(g.get('end_page', 0))}" for g in gold
+    )
+
+
+def _format_top_hits_for_md(top_hit_ids: List[dict], limit: int = 3) -> str:
+    short = top_hit_ids[: max(0, limit)]
+    if not short:
+        return "none"
+    return "; ".join(
+        f"r{int(h.get('rank', 0))} {h.get('doc_id', '')} {h.get('pages', '')}" for h in short
+    )
+
+
 def _build_summary_markdown(summary: Dict[str, Any]) -> str:
     retrieval = summary["retrieval"]
     answer = summary.get("answer", {})
+    missed = retrieval.get("questions_without_gold_in_primary_k", [])
+    sec = retrieval.get("secondary_diagnostics", {})
+    near_page_tolerance = sec.get("near_page_tolerance")
     lines = [
         "# Evaluation Summary",
         "",
         f"- generated_at_utc: {summary['generated_at_utc']}",
+        f"- run_id: {summary.get('run_id')}",
         f"- dataset: {summary['dataset_path']}",
         f"- total_questions: {summary['counts']['total_questions']}",
         f"- answerable_questions: {summary['counts']['answerable_questions']}",
@@ -181,7 +249,6 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
             f"mrr={_fmt(metric_row.get('mrr'))}, ndcg={_fmt(metric_row.get('ndcg'))}"
         )
 
-    sec = retrieval.get("secondary_diagnostics", {})
     sec_at_k = sec.get("hit_rate_at_k", {})
     if sec_at_k:
         lines.extend(
@@ -200,6 +267,46 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
                 f"- {key}: strict={_fmt(diag.get('strict_page_overlap'))}, "
                 f"doc_only={_fmt(diag.get('doc_only'))}, "
                 f"near_page={_fmt(diag.get('near_page_tolerance'))}"
+            )
+    lines.extend(
+        [
+            "",
+            "### Metric Definitions",
+            "- Retrieval By K:",
+            "  Recall@k = average fraction of gold spans recovered per question; "
+            "MRR@k = average reciprocal first strict-hit rank; "
+            "nDCG@k = rank-aware gain over unique gold spans.",
+            "- Secondary Diagnostics:",
+            "  hit-rate style metrics (per-question success rate): at least one matching hit appears in top-k.",
+            "- strict:",
+            "  doc_id match + page overlap (same relevance rule as primary retrieval metrics).",
+            "- doc_only:",
+            "  doc_id must match; page overlap is ignored.",
+            "- near_page:",
+            "  doc_id match + page overlap with +-near_page_tolerance slack.",
+            "- Why numbers differ:",
+            "  Retrieval By K is span-coverage/rank quality; Secondary Diagnostics is question-level any-hit rate, "
+            "so strict can be higher when questions have multiple gold spans.",
+        ]
+    )
+    if near_page_tolerance == 0:
+        lines.append("- Note: near_page_tolerance=0 makes near_page equivalent to strict.")
+
+    lines.extend(
+        [
+            "",
+            "### Questions Missing Gold In Top-k",
+            f"- count: {retrieval.get('n_questions_without_gold_in_primary_k')}",
+        ]
+    )
+    if not missed:
+        lines.append("- none")
+    else:
+        for row in missed:
+            lines.append(
+                f"- {row.get('qid')}: {row.get('question')} | "
+                f"gold={_format_gold_spans(row.get('gold', []))} | "
+                f"top_hits={_format_top_hits_for_md(row.get('top_hit_ids', []))}"
             )
 
     lines.extend(
@@ -221,7 +328,7 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m eval.run")
     parser.add_argument("--dataset", type=str, default="eval/day4/questions.jsonl")
-    parser.add_argument("--outdir", type=str, default="reports/eval/day4_baseline")
+    parser.add_argument("--outdir", type=str, default="reports/eval")
     parser.add_argument("--mode", type=str, choices=["base", "hybrid"], default=SETTINGS.RETRIEVAL_MODE)
     parser.add_argument("--backend", type=str, default=SETTINGS.VECTOR_BACKEND)
     parser.add_argument("--k", type=int, default=SETTINGS.TOP_K, help="Primary retrieval depth and primary @k.")
@@ -279,6 +386,8 @@ def main() -> None:
     strict_rank_lists: List[List[int]] = []
     doc_only_rank_lists: List[List[int]] = []
     near_page_rank_lists: List[List[int]] = []
+    questions_with_gold_in_primary_k_qids: List[str] = []
+    questions_without_gold_in_primary_k: List[Dict[str, Any]] = []
     answer_rows: List[Dict[str, Any]] = []
     answer_errors = 0
 
@@ -301,6 +410,9 @@ def main() -> None:
         gold_hit_ranks: List[int] = []
         doc_hit_ranks: List[int] = []
         near_page_hit_ranks: List[int] = []
+        has_gold_in_primary_k: bool | None = None
+        top_hit_ids = _top_hit_ids(hits=hits, limit=min(10, retrieval_depth))
+
         if row["answerable"] and row["gold"]:
             metrics_by_k = compute_retrieval_metrics_by_ks(
                 hits=hits,
@@ -338,6 +450,20 @@ def main() -> None:
             strict_rank_lists.append(gold_hit_ranks)
             doc_only_rank_lists.append(doc_hit_ranks)
             near_page_rank_lists.append(near_page_hit_ranks)
+
+            has_gold_in_primary_k = _has_hit_in_top_k(gold_hit_ranks, primary_k)
+            if has_gold_in_primary_k:
+                questions_with_gold_in_primary_k_qids.append(row["qid"])
+            else:
+                questions_without_gold_in_primary_k.append(
+                    {
+                        "qid": row["qid"],
+                        "question": row["question"],
+                        "gold": row["gold"],
+                        "gold_hit_ranks": gold_hit_ranks,
+                        "top_hit_ids": top_hit_ids,
+                    }
+                )
         elif not row["answerable"]:
             retrieval_skipped_unanswerable_qids.append(row["qid"])
         else:
@@ -353,7 +479,8 @@ def main() -> None:
                 "gold_hit_ranks": gold_hit_ranks,
                 "doc_hit_ranks": doc_hit_ranks,
                 "near_page_hit_ranks": near_page_hit_ranks,
-                "top_hit_ids": _top_hit_ids(hits=hits, limit=min(10, retrieval_depth)),
+                "has_gold_in_primary_k": has_gold_in_primary_k,
+                "top_hit_ids": top_hit_ids,
                 "hits": hits,
             },
         }
@@ -383,6 +510,12 @@ def main() -> None:
 
         per_question.append(question_result)
 
+    if len(questions_with_gold_in_primary_k_qids) + len(questions_without_gold_in_primary_k) != len(retrieval_eval_qids):
+        raise RuntimeError(
+            "Internal mismatch while building top-k miss summary: "
+            "evaluated != hits + misses."
+        )
+
     retrieval_at_k: Dict[str, Dict[str, float | None]] = {}
     for k in metric_ks:
         rows_k = retrieval_rows_by_k[k]
@@ -400,6 +533,15 @@ def main() -> None:
             "doc_only": _hit_rate_at_k(doc_only_rank_lists, k),
             "near_page_tolerance": _hit_rate_at_k(near_page_rank_lists, k),
         }
+
+    questions_without_gold_in_primary_k = sorted(
+        questions_without_gold_in_primary_k,
+        key=lambda r: qid_sort_key(str(r.get("qid", ""))),
+    )
+    questions_with_gold_in_primary_k_qids = sorted(
+        questions_with_gold_in_primary_k_qids,
+        key=qid_sort_key,
+    )
 
     primary_secondary = secondary_hit_rate_at_k.get(
         f"k{primary_k}",
@@ -420,6 +562,10 @@ def main() -> None:
         "recall_at_k": primary_metrics.get("recall"),
         "mrr_at_k": primary_metrics.get("mrr"),
         "ndcg_at_k": primary_metrics.get("ndcg"),
+        "n_questions_with_gold_in_primary_k": len(questions_with_gold_in_primary_k_qids),
+        "n_questions_without_gold_in_primary_k": len(questions_without_gold_in_primary_k),
+        "questions_with_gold_in_primary_k_qids": questions_with_gold_in_primary_k_qids,
+        "questions_without_gold_in_primary_k": questions_without_gold_in_primary_k,
         "secondary_diagnostics": {
             "near_page_tolerance": args.near_page_tolerance,
             "primary_k_hit_rate": primary_secondary,
@@ -447,9 +593,12 @@ def main() -> None:
 
     labeled_answerable = sum(1 for q in questions if q["answerable"] and q["gold"])
     unlabeled_answerable = sum(1 for q in questions if q["answerable"] and not q["gold"])
+    generated_at_utc = datetime.now(timezone.utc)
+    run_id = _build_run_id(dataset_path=args.dataset, generated_at_utc=generated_at_utc)
 
     summary = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "run_id": run_id,
+        "generated_at_utc": generated_at_utc.isoformat(),
         "dataset_path": str(Path(args.dataset)),
         "run_config": {
             "mode": args.mode,
@@ -484,15 +633,19 @@ def main() -> None:
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    per_question_path = outdir / "per_question.jsonl"
-    summary_json_path = outdir / "summary.json"
-    summary_md_path = outdir / "summary.md"
+    artifact_paths = _build_artifact_paths(outdir=outdir, run_id=run_id)
+    per_question_path = artifact_paths["per_question"]
+    summary_json_path = artifact_paths["summary_json"]
+    summary_md_path = artifact_paths["summary_md"]
 
     per_question = sorted(per_question, key=lambda r: qid_sort_key(str(r.get("qid", ""))))
+    summary["artifact_paths"] = {name: str(path) for name, path in artifact_paths.items()}
+
     _write_jsonl(per_question_path, per_question)
     summary_json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     summary_md_path.write_text(_build_summary_markdown(summary), encoding="utf-8")
 
+    print(f"[OK] run_id={run_id}")
     print(f"[OK] wrote {per_question_path}")
     print(f"[OK] wrote {summary_json_path}")
     print(f"[OK] wrote {summary_md_path}")

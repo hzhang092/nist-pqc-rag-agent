@@ -1,0 +1,758 @@
+{
+  "answer": {
+    "citation_presence_rate": null,
+    "enabled": false,
+    "inline_citation_sentence_rate": null,
+    "model_dependent": true,
+    "note": "Answer metrics are model-dependent and less stable than retrieval metrics; use retrieval metrics as primary regression signals.",
+    "refusal_accuracy": null
+  },
+  "artifact_paths": {
+    "per_question": "reports\\eval\\questions_20260301T202803Z_per_question.jsonl",
+    "summary_json": "reports\\eval\\questions_20260301T202803Z_summary.json",
+    "summary_md": "reports\\eval\\questions_20260301T202803Z_summary.md"
+  },
+  "counts": {
+    "answer_errors": 0,
+    "answer_evaluated_questions": 0,
+    "answerable_questions": 21,
+    "labeled_answerable_questions": 21,
+    "retrieval_evaluated_questions": 21,
+    "retrieval_skipped_unanswerable": 3,
+    "retrieval_skipped_unlabeled_answerable": 0,
+    "total_questions": 24,
+    "unanswerable_questions": 3,
+    "unlabeled_answerable_questions": 0
+  },
+  "dataset_path": "eval\\day4\\questions.jsonl",
+  "generated_at_utc": "2026-03-01T20:28:03.606341+00:00",
+  "retrieval": {
+    "at_k": {
+      "k1": {
+        "mrr": 0.3333333333333333,
+        "ndcg": 0.3333333333333333,
+        "recall": 0.30952380952380953
+      },
+      "k3": {
+        "mrr": 0.373015873015873,
+        "ndcg": 0.37556441939212104,
+        "recall": 0.40476190476190477
+      },
+      "k5": {
+        "mrr": 0.38492063492063494,
+        "ndcg": 0.3881390918955777,
+        "recall": 0.42857142857142855
+      },
+      "k8": {
+        "mrr": 0.39682539682539686,
+        "ndcg": 0.4285837200093693,
+        "recall": 0.5476190476190477
+      }
+    },
+    "metric_ks": [
+      1,
+      3,
+      5,
+      8
+    ],
+    "mrr_at_k": 0.39682539682539686,
+    "n_questions": 21,
+    "n_questions_with_gold_in_primary_k": 12,
+    "n_questions_without_gold_in_primary_k": 9,
+    "ndcg_at_k": 0.4285837200093693,
+    "primary_k": 8,
+    "questions_with_gold_in_primary_k_qids": [
+      "q004",
+      "q006",
+      "q007",
+      "q008",
+      "q011",
+      "q015",
+      "q016",
+      "q017",
+      "q018",
+      "q019",
+      "q021",
+      "q023"
+    ],
+    "questions_without_gold_in_primary_k": [
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.IR.8547.ipd",
+            "end_page": 8,
+            "start_page": 8
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q001",
+        "question": "what is PQC",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0009::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p9-p9",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0012::c001",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p12-p12",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0025::c000",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p25-p25",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0020::c002",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p20-p20",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0015::c002",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p15-p15",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0020::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p20-p20",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0009::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p9-p9",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0039::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p39-p39",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 10,
+            "start_page": 10
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 11,
+            "start_page": 11
+          },
+          {
+            "doc_id": "NIST.FIPS.205",
+            "end_page": 11,
+            "start_page": 11
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q002",
+        "question": "why do we need the PQC standards",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0012::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p12-p12",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0009::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p9-p9",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0025::c000",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p25-p25",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0013::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p13-p13",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0016::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p16-p16",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0008::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p8-p8",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0012::c001",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p12-p12",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0008::c001",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p8-p8",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 10,
+            "start_page": 10
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 3,
+            "start_page": 3
+          },
+          {
+            "doc_id": "NIST.FIPS.205",
+            "end_page": 3,
+            "start_page": 3
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q003",
+        "question": "What are the PQC standards",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0012::c001",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p12-p12",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0018::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p18-p18",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0024::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p24-p24",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0016::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p16-p16",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0012::c000",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p12-p12",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0015::c002",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p15-p15",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0020::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p20-p20",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.IR.8547.ipd::p0016::c001",
+            "doc_id": "NIST.IR.8547.ipd",
+            "pages": "p16-p16",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 4,
+            "start_page": 3
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 11,
+            "start_page": 11
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q005",
+        "question": "explain ML-DSA",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.FIPS.204::p0008::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p8-p8",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0007::c002",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p7-p7",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0029::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p29-p29",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0009::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p9-p9",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0028::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p28-p28",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0064::c002",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p64-p64",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0019::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p19-p19",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0022::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p22-p22",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 3,
+            "start_page": 3
+          },
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 21,
+            "start_page": 21
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 4,
+            "start_page": 3
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 19,
+            "start_page": 19
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q009",
+        "question": "What are the difference between ML-KEM and ML-DSA?",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.FIPS.204::p0008::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p8-p8",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0043::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p43-p43",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0044::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p44-p44",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0043::c000",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p43-p43",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0064::c002",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p64-p64",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0064::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p64-p64",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0027::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p27-p27",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0010::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p10-p10",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 4,
+            "start_page": 4
+          },
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 11,
+            "start_page": 11
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q010",
+        "question": "Define ML-KEM encapsulation key and where it’s used.",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.FIPS.203::p0010::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p10-p10",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0003::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p3-p3",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0022::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p22-p22",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0021::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p21-p21",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0043::c000",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p43-p43",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0044::c001",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p44-p44",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0010::c001",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p10-p10",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0016::c000",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p16-p16",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 5,
+            "start_page": 5
+          },
+          {
+            "doc_id": "NIST.FIPS.205",
+            "end_page": 5,
+            "start_page": 5
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q012",
+        "question": "How do ML-DSA and SLH-DSA differ in intended use-cases?",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.FIPS.205::p0018::c000",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p18-p18",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.FIPS.205::p0054::c001",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p54-p54",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0064::c002",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p64-p64",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.FIPS.205::p0048::c000",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p48-p48",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.FIPS.205::p0019::c002",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p19-p19",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0022::c002",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p22-p22",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.205::p0047::c001",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p47-p47",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0022::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p22-p22",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.FIPS.203",
+            "end_page": 10,
+            "start_page": 10
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 11,
+            "start_page": 11
+          },
+          {
+            "doc_id": "NIST.FIPS.204",
+            "end_page": 11,
+            "start_page": 11
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q014",
+        "question": "What underlying mathematical hardness assumptions form the security basis for ML-KEM, ML-DSA, and SLH-DSA?",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.FIPS.204::p0025::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p25-p25",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0008::c000",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p8-p8",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0019::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p19-p19",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0019::c000",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p19-p19",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.FIPS.205::p0047::c000",
+            "doc_id": "NIST.FIPS.205",
+            "pages": "p47-p47",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.204::p0007::c001",
+            "doc_id": "NIST.FIPS.204",
+            "pages": "p7-p7",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0022::c001",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p22-p22",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.IR.8545::p0017::c001",
+            "doc_id": "NIST.IR.8545",
+            "pages": "p17-p17",
+            "rank": 8
+          }
+        ]
+      },
+      {
+        "gold": [
+          {
+            "doc_id": "NIST.SP.800-227",
+            "end_page": 36,
+            "start_page": 35
+          }
+        ],
+        "gold_hit_ranks": [],
+        "qid": "q020",
+        "question": "What are the required steps to construct a composite key-encapsulation mechanism (KEM) from two existing component KEMs?",
+        "top_hit_ids": [
+          {
+            "chunk_id": "NIST.SP.800-227::p0005::c000",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p5-p5",
+            "rank": 1
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0003::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p3-p3",
+            "rank": 2
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0025::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p25-p25",
+            "rank": 3
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0007::c001",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p7-p7",
+            "rank": 4
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0004::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p4-p4",
+            "rank": 5
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0021::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p21-p21",
+            "rank": 6
+          },
+          {
+            "chunk_id": "NIST.FIPS.203::p0010::c000",
+            "doc_id": "NIST.FIPS.203",
+            "pages": "p10-p10",
+            "rank": 7
+          },
+          {
+            "chunk_id": "NIST.SP.800-227::p0007::c000",
+            "doc_id": "NIST.SP.800-227",
+            "pages": "p7-p7",
+            "rank": 8
+          }
+        ]
+      }
+    ],
+    "recall_at_k": 0.5476190476190477,
+    "scoring_scope": "answerable_with_non_empty_gold_only",
+    "secondary_diagnostics": {
+      "hit_rate_at_k": {
+        "k1": {
+          "doc_only": 0.8571428571428571,
+          "near_page_tolerance": 0.42857142857142855,
+          "strict_page_overlap": 0.3333333333333333
+        },
+        "k3": {
+          "doc_only": 0.9047619047619048,
+          "near_page_tolerance": 0.5238095238095238,
+          "strict_page_overlap": 0.42857142857142855
+        },
+        "k5": {
+          "doc_only": 0.9047619047619048,
+          "near_page_tolerance": 0.6190476190476191,
+          "strict_page_overlap": 0.47619047619047616
+        },
+        "k8": {
+          "doc_only": 0.9047619047619048,
+          "near_page_tolerance": 0.6666666666666666,
+          "strict_page_overlap": 0.5714285714285714
+        }
+      },
+      "near_page_tolerance": 1,
+      "primary_k_hit_rate": {
+        "doc_only": 0.9047619047619048,
+        "near_page_tolerance": 0.6666666666666666,
+        "strict_page_overlap": 0.5714285714285714
+      }
+    },
+    "skipped_unanswerable_qids": [
+      "q013",
+      "q022",
+      "q024"
+    ],
+    "skipped_unlabeled_answerable_qids": []
+  },
+  "run_config": {
+    "allow_unlabeled": false,
+    "backend": "faiss",
+    "candidate_multiplier": 4,
+    "fusion": true,
+    "k": 8,
+    "k0": 60,
+    "ks": [
+      1,
+      3,
+      5,
+      8
+    ],
+    "mode": "hybrid",
+    "near_page_tolerance": 1,
+    "rerank": true,
+    "rerank_pool": 40,
+    "retrieval_depth": 8,
+    "with_answers": false
+  },
+  "run_id": "questions_20260301T202803Z"
+}

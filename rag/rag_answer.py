@@ -18,6 +18,8 @@ Improvements in this version:
 - Prettify algorithm/pseudocode evidence to reduce "all-on-one-line" failures.
 - Add deterministic fallback for "Algorithm N" step questions when the model refuses,
   but the steps are clearly present in evidence.
+- Add deterministic fallback for comparison questions when role-bearing evidence is present
+  but the model still refuses.
 """
 # rag/rag_answer.py
 from __future__ import annotations
@@ -33,9 +35,20 @@ from rag.retriever.base import ChunkHit
 from rag.types import AnswerResult, Citation, REFUSAL_TEXT, validate_answer
 
 
-_CITE_RE = re.compile(r"\[(c\d+)\]")
+_CITE_BRACKET_RE = re.compile(r"\[([^\]]+)\]")
+_CITE_TOKEN_RE = re.compile(r"\bc\d+\b", flags=re.IGNORECASE)
 _ALG_Q_RE = re.compile(r"\bAlgorithm\s+(?P<n>\d+)\b", re.IGNORECASE)
 _STEP_RE = re.compile(r"^\s*(?P<k>\d+)\s*:\s*(?P<body>.+?)\s*$")
+_COMPARE_PATTERNS = (
+    re.compile(r"(?:differences?|difference)\s+between\s+(?P<a>.+?)\s+and\s+(?P<b>.+)$", flags=re.IGNORECASE),
+    re.compile(r"(?:compare|comparison\s+of)\s+(?P<a>.+?)\s+(?:and|vs|versus)\s+(?P<b>.+)$", flags=re.IGNORECASE),
+    re.compile(r"(?P<a>.+?)\s+(?:vs|versus)\s+(?P<b>.+)$", flags=re.IGNORECASE),
+)
+_ROLE_PATTERNS = (
+    (re.compile(r"\bkey-encapsulation mechanism\b", flags=re.IGNORECASE), "key-encapsulation mechanism"),
+    (re.compile(r"\bdigital signature scheme\b", flags=re.IGNORECASE), "digital signature scheme"),
+    (re.compile(r"\bkey establishment scheme\b", flags=re.IGNORECASE), "key establishment scheme"),
+)
 
 CHUNK_STORE_PATH = Path("data/processed/chunk_store.jsonl")
 
@@ -211,18 +224,35 @@ def _sentences(text: str) -> List[str]:
     return [p for p in parts if p.strip()]
 
 
+def _extract_inline_citation_keys(text: str) -> set[str]:
+    """
+    Extract inline citation keys from bracketed markers and normalize to lowercase.
+
+    Accepts:
+    - [c1]
+    - [C1]
+    - [c1][c2]
+    - [c1, c2]
+    """
+    keys: set[str] = set()
+    for bracket_content in _CITE_BRACKET_RE.findall(text):
+        for token in _CITE_TOKEN_RE.findall(bracket_content):
+            keys.add(token.lower())
+    return keys
+
+
 def enforce_inline_citations(answer_text: str, key_to_cit: Dict[str, Citation]) -> AnswerResult:
     """
     Validates the raw LLM output to enforce strict citation grounding.
     """
     ans = answer_text.strip()
 
-    if ans.lower() in {"not found", "not found in documents", REFUSAL_TEXT}:
+    if ans.lower() in {"not found", "not found in documents", REFUSAL_TEXT.lower()}:
         result = AnswerResult(answer=REFUSAL_TEXT, citations=[])
         validate_answer(result, require_citations=SETTINGS.ASK_REQUIRE_CITATIONS, require_inline_markers=True)
         return result
 
-    used = set(_CITE_RE.findall(ans))
+    used = _extract_inline_citation_keys(ans)
     if not used:
         result = AnswerResult(answer=REFUSAL_TEXT, citations=[])
         validate_answer(result, require_citations=SETTINGS.ASK_REQUIRE_CITATIONS, require_inline_markers=True)
@@ -236,7 +266,7 @@ def enforce_inline_citations(answer_text: str, key_to_cit: Dict[str, Citation]) 
 
     # Every sentence must have ≥1 citation marker
     for s in _sentences(ans):
-        if not _CITE_RE.search(s):
+        if not _extract_inline_citation_keys(s):
             result = AnswerResult(answer=REFUSAL_TEXT, citations=[])
             validate_answer(result, require_citations=SETTINGS.ASK_REQUIRE_CITATIONS, require_inline_markers=True)
             return result
@@ -266,6 +296,124 @@ def _extract_algorithm_steps(text: str) -> List[Tuple[int, str]]:
         if body:
             steps.append((k, body))
     return steps
+
+
+def _extract_compare_topics(question: str) -> Tuple[str | None, str | None]:
+    q = (question or "").strip().rstrip("?").strip()
+    if not q:
+        return None, None
+
+    for pattern in _COMPARE_PATTERNS:
+        m = pattern.search(q)
+        if not m:
+            continue
+        topic_a = m.group("a").strip().strip(" .,:;\"'`[](){}")
+        topic_b = m.group("b").strip().strip(" .,:;\"'`[](){}")
+        if topic_a and topic_b and topic_a.lower() != topic_b.lower():
+            return topic_a, topic_b
+    return None, None
+
+
+def _normalized_topic_token(topic: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (topic or "").lower())
+
+
+def _topic_in_text(topic: str, text: str) -> bool:
+    token = _normalized_topic_token(topic)
+    if not token:
+        return False
+    norm_text = re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+    return token in norm_text
+
+
+def _infer_role_from_text(text: str) -> str | None:
+    for pattern, label in _ROLE_PATTERNS:
+        if pattern.search(text or ""):
+            return label
+    return None
+
+
+def _first_sentence(text: str) -> str:
+    sents = _sentences(_prettify_evidence_text(text or ""))
+    if not sents:
+        return ""
+    for s in sents:
+        candidate = s.strip()
+        if len(candidate) < 25:
+            continue
+        if sum(ch.isalpha() for ch in candidate) < 12:
+            continue
+        return candidate
+    return sents[0].strip()
+
+
+def _pick_topic_hit(topic: str, ordered: List[ChunkHit]) -> ChunkHit | None:
+    first_hit: ChunkHit | None = None
+    for h in ordered:
+        text = h.text or ""
+        if not _topic_in_text(topic, text):
+            continue
+        if first_hit is None:
+            first_hit = h
+        if _infer_role_from_text(text):
+            return h
+    return first_hit
+
+
+def _comparison_fallback_answer(question: str, hits: List[ChunkHit]) -> Tuple[str, Dict[str, Citation]] | None:
+    """
+    Deterministic fallback for compare questions when the model refuses.
+
+    Uses high-signal role phrases from evidence (e.g., "key-encapsulation mechanism",
+    "digital signature scheme") so we can still return a minimally grounded comparison.
+    """
+    topic_a, topic_b = _extract_compare_topics(question)
+    if not topic_a or not topic_b:
+        return None
+
+    best: Dict[str, ChunkHit] = {}
+    for h in hits:
+        prev = best.get(h.chunk_id)
+        if prev is None or h.score > prev.score:
+            best[h.chunk_id] = h
+    ordered = sorted(best.values(), key=_stable_sort_key)
+
+    hit_a = _pick_topic_hit(topic_a, ordered)
+    hit_b = _pick_topic_hit(topic_b, ordered)
+
+    if hit_a is None or hit_b is None:
+        return None
+
+    evidence = [hit_a]
+    if hit_b.chunk_id != hit_a.chunk_id:
+        evidence.append(hit_b)
+
+    _, key_to_cit = build_context_and_citations(evidence)
+
+    key_a = "c1"
+    key_b = "c1" if len(evidence) == 1 else "c2"
+    role_a = _infer_role_from_text(hit_a.text or "") or ""
+    role_b = _infer_role_from_text(hit_b.text or "") or ""
+
+    if role_a and role_b and role_a != role_b:
+        bullets = [
+            f"- {topic_a} is specified as a {role_a} [{key_a}].",
+            f"- {topic_b} is specified as a {role_b} [{key_b}].",
+            f"- This indicates the standards assign different core purposes to these schemes [{key_a}][{key_b}].",
+        ]
+        return "\n".join(bullets), key_to_cit
+
+    sent_a = _first_sentence(hit_a.text or "").rstrip(".")
+    sent_b = _first_sentence(hit_b.text or "").rstrip(".")
+    if not sent_a or not sent_b:
+        return None
+
+    bullets = [
+        f"- {topic_a}: {sent_a} [{key_a}].",
+        f"- {topic_b}: {sent_b} [{key_b}].",
+        f"- These statements provide citable evidence for a side-by-side comparison [{key_a}][{key_b}].",
+    ]
+    return "\n".join(bullets), key_to_cit
 
 
 def _algorithm_fallback_answer(question: str, evidence: List[ChunkHit], key_to_cit: Dict[str, Citation]) -> str | None:
@@ -338,7 +486,8 @@ def build_cited_answer(
         f"3) If the evidence is insufficient, reply exactly: {REFUSAL_TEXT}\n"
         "4) Be concise and factual.\n"
         "5) NEVER hallucinate or use information not in the provided evidence.\n"
-        "6) Answer in 3–6 bullets. Each bullet should be ONE sentence and end with exactly one [c#].\n\n"
+        "6) Answer in 3–6 bullets. Each bullet should be ONE sentence and end with one or more citation markers.\n"
+        "7) If multiple sources are needed for one claim, cite all of them at the end (e.g., [c1][c2] or [c1, c2]).\n\n"
         f"Question:\n{question}\n\n"
         f"Evidence:\n{context}\n"
     )
@@ -354,5 +503,15 @@ def build_cited_answer(
             result2 = enforce_inline_citations(fb, key_to_cit)
             if result2.answer != REFUSAL_TEXT:
                 return result2
+
+    # Deterministic comparison fallback: produce a minimal grounded compare answer
+    # from role-bearing evidence when LLM generation still refuses.
+    if result.answer == REFUSAL_TEXT:
+        fb_cmp = _comparison_fallback_answer(question, hits)
+        if fb_cmp:
+            fb_cmp_text, fb_cmp_key_map = fb_cmp
+            result3 = enforce_inline_citations(fb_cmp_text, fb_cmp_key_map)
+            if result3.answer != REFUSAL_TEXT:
+                return result3
 
     return result

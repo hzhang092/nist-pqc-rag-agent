@@ -62,13 +62,18 @@ class AnswerResult:
         return asdict(self)
 
 
-_CITE_KEY_RE = re.compile(r"\[(c\d+)\]")
+_CITE_BRACKET_RE = re.compile(r"\[([^\]]+)\]")
+_CITE_TOKEN_RE = re.compile(r"\bc\d+\b", flags=re.IGNORECASE)
 
 def extract_citation_keys(answer_text: str) -> Set[str]:
     """
     Finds all unique inline citation markers (e.g., `[c1]`, `[c2]`) in the text.
     """
-    return set(_CITE_KEY_RE.findall(answer_text))
+    keys: Set[str] = set()
+    for bracket_content in _CITE_BRACKET_RE.findall(answer_text):
+        for token in _CITE_TOKEN_RE.findall(bracket_content):
+            keys.add(token.lower())
+    return keys
 
 
 def validate_answer(

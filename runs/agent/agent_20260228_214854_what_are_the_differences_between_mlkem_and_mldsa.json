@@ -1,0 +1,246 @@
+{
+  "question": "What are the differences between ML-KEM and ML-DSA?",
+  "plan": {
+    "action": "compare",
+    "reason": "Comparison intent detected with parsed topics.",
+    "query": null,
+    "args": {
+      "topic_a": "ML-KEM",
+      "topic_b": "ML-DSA"
+    },
+    "mode_hint": "general"
+  },
+  "evidence": [
+    {
+      "score": 0.03047794966520434,
+      "chunk_id": "NIST.FIPS.203::p0010::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "text": "1.1 Purpose and Scope\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM). A key-encapsulation mechanism (KEM) is a set of algorithms that can be used to establish a shared secret key between two parties communicating over a public channel. A KEM is a particular type of key establishment scheme. Other NIST-approved key establishment schemes are specified in NIST Special Publication (SP) 800-56A, Recommendation for Pair-Wise Key-Establishment\nSchemes Using Discrete Logarithm-Based Cryptography [2], and SP 800-56B, Recommendation\nfor Pair-Wise Key Establishment Schemes Using Integer Factorization Cryptography [3].\nThe key establishment schemes specified in SP 800-56A and SP 800-56B are vulnerable to attacks that use sufficiently-capable quantum computers. ML…(truncated)"
+    },
+    {
+      "score": 0.016129032258064516,
+      "chunk_id": "NIST.IR.8545::p0012::c000",
+      "doc_id": "NIST.IR.8545",
+      "start_page": 12,
+      "end_page": 12,
+      "text": "assumptions and aims to reduce the risk that a single cryptanalytic breakthrough will leave no viable standard for key establishment. In pursuit of that goal, NIST selected fourthround candidates whose security was based on computational assumptions that differ significantly from that of ML-KEM. Specifically, the candidates consisted of the isogeny-based KEM SIKE and the code-based KEMs BIKE, HQC, and Classic McEliece. See Table 2. NIST’s key-establishment standards are currently utilized in a wide variety of applications. The specific properties required for a key-establishment scheme to provide security in a given application can vary. However, in terms of formal security definitions, a single notion suffices for key-establishment schemes that are intended for general use: semantic secur…(truncated)"
+    },
+    {
+      "score": 0.061375384880819665,
+      "chunk_id": "NIST.FIPS.203::p0010::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "text": "1. Introduction\n\n1.1 Purpose and Scope\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM). A key-encapsulation mechanism (KEM) is a set of algorithms that can be used to establish a shared secret key between two parties communicating over a public channel. A KEM is a particular type of key establishment scheme. Other NIST-approved key establishment schemes are specified in NIST Special Publication (SP) 800-56A, Recommendation for Pair-Wise Key-Establishment\nSchemes Using Discrete Logarithm-Based Cryptography [2], and SP 800-56B, Recommendation\nfor Pair-Wise Key Establishment Schemes Using Integer Factorization Cryptography [3].\nThe key establishment schemes specified in SP 800-56A and SP 800-56B are vulnerable to attacks that use sufficiently-capable quan…(truncated)"
+    },
+    {
+      "score": 0.0293236301369863,
+      "chunk_id": "NIST.SP.800-227::p0013::c001",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 13,
+      "end_page": 13,
+      "text": "History and development. KEMs were first introduced by Cramer and Shoup [11, 12] as a\nbuilding block for constructing highly efficient public-key encryption (PKE) schemes. Their approach combines a KEM with a data encryption mechanism (DEM), which is simply a symmetric-key encryption scheme. The KEM is used to generate a shared secret key, while the DEM is used to encrypt an arbitrarily long stream of messages under that key. This is commonly referred to as the KEM/DEM paradigm (see the HPKE example in Sec. 5.2.1).\nThis approach to constructing highly efficient public-key encryption has been the subject\nof several standards [1, 2, 11, 13–16]. Most recently, KEMs have attracted significant attention due to most of the post-quantum key-establishment candidates in the NIST PQC\nstandardization…(truncated)"
+    },
+    {
+      "score": 0.0288981288981289,
+      "chunk_id": "NIST.SP.800-227::p0043::c000",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 43,
+      "end_page": 43,
+      "text": "quantum-vulnerable, as mentioned in Section 2.2. This KEM is not claimed to be IND-CCAsecure. In similar ways, KEMs could be constructed from RSA-OAEP-basic, as specified in Sec. 9.2.3 of SP 800-56B.\n\n5.1.3. ML-KEM ML-KEM is a high-performance, general-purpose, lattice-based key-encapsulation mechanism. It is a NIST-approved KEM and was standardized in FIPS 203 [3]. ML-KEM is based on CRYSTALS-Kyber [26], which was a candidate in the NIST PQC standardization process. It is believed to satisfy IND-CCA security (Definition 4), even against adversaries in possession of a cryptanalytically relevant quantum computer [17, 27, 28]. The asymptotic, theoretical security of ML-KEM is based on the presumed hardness of the Module Learning with Errors (MLWE) problem [29, 30]. FIPS 203 directly describe…(truncated)"
+    },
+    {
+      "score": 0.060486896615928876,
+      "chunk_id": "NIST.SP.800-227::p0043::c001",
+      "doc_id": "NIST.SP.800-227",
+      "start_page": 43,
+      "end_page": 43,
+      "text": "5.1.3. ML-KEM ML-KEM is a high-performance, general-purpose, lattice-based key-encapsulation mechanism. It is a NIST-approved KEM and was standardized in FIPS 203 [3]. ML-KEM is based on CRYSTALS-Kyber [26], which was a candidate in the NIST PQC standardization process. It is believed to satisfy IND-CCA security (Definition 4), even against adversaries in possession of a cryptanalytically relevant quantum computer [17, 27, 28]. The asymptotic, theoretical security of ML-KEM is based on the presumed hardness of the Module Learning with Errors (MLWE) problem [29, 30]. FIPS 203 directly describes ML-KEM as a KEM in a manner that closely matches the notation of this document. Specifically, the components of ML-KEM are described in FIPS 203 as follows [3]: • ML-KEM.ParamSets. There are three pa…(truncated)"
+    },
+    {
+      "score": 0.045907331511839705,
+      "chunk_id": "NIST.FIPS.204::p0022::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 22,
+      "end_page": 22,
+      "text": "3.6.2 Public-Key and Signature Length Checks\nAlgorithm 3, implementing verification for ML-DSA, and Algorithm 5, implementing verification for HashML- DSA, specify the length of the signature σ and the public key pk in terms of the parameters described in Table 1. If an implementation of ML-DSA can accept inputs for σ or pk of any other length, it shall return false whenever the lengths of either of these inputs differ from their lengths specified in this standard.\nFailing to check the length of pk or σ may interfere with the security properties that ML-DSA is designed to have, like strong unforgeability.\n\n3.6.3 Intermediate Values The data used internally by the key generation and signing algorithms in intermediate computation steps could be used by an adversary to gain information about …(truncated)"
+    },
+    {
+      "score": 0.03252247488101534,
+      "chunk_id": "NIST.FIPS.204::p0064::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "text": "D.2 Differences Between Version 3.1 of CRYSTALS-DILITHIUM and FIPS 204 Initial Public Draft\nIn order to ensure the properties noted in [14], ML-DSA increases the length of tr to 512 bits and increases\nthe length of c to 384 and 512 bits for the parameter sets ML-DSA-65 and ML-DSA-87, respectively. In draft ML-DSA, only the first 256 bits of c are used in the generation of c.\nIn Version 3.1 of the CRYSTALS-DILITHIUM submission, the default version of the signing algorithm is deterministic with ρ′ being generated pseudorandomly from the signer’s private key and the message, and an optional version of the signing algorithm has ρ′ sampled instead as a 512-bit random string. In ML-DSA, ρ′ is generated by a “hedged” procedure in which ρ′ is pseudorandomly derived from the signer’s private key, t…(truncated)"
+    },
+    {
+      "score": 0.031024531024531024,
+      "chunk_id": "NIST.FIPS.204::p0019::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 19,
+      "end_page": 19,
+      "text": "3. Overview of the ML-DSA Signature Scheme\n\nML-DSA is a digital signature scheme based on CRYSTALS-DILITHIUM [6]. It consists of three main algorithms:\nML-DSA.KeyGen (Algorithm 1), ML-DSA.Sign (Algorithm 2), and ML-DSA.Verify (Algorithm 3). The\nML-DSA scheme uses the Fiat-Shamir With Aborts construction [10, 11] and bears the most resemblance\nto the schemes proposed in [12, 13].\nThis document also defines a closely related but domain-separated signature scheme, HashML-DSA, which differs from ML-DSA in that it includes an additional pre-hashing step before signing. It consists of three main algorithms: ML-DSA.KeyGen (Algorithm 1), which is the same key generation algorithm used for ML-DSA; HashML-DSA.Sign (Algorithm 4); and HashML-DSA.Verify (Algorithm 5).\n\n3.1 Security Properties\nML-DSA is…(truncated)"
+    },
+    {
+      "score": 0.03149801587301587,
+      "chunk_id": "NIST.FIPS.204::p0032::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 32,
+      "end_page": 32,
+      "text": "t = As1 + s2.\n\nThe vector t together with the matrix A may be considered an expanded form of the public key. The vector t is compressed in the actual public key by dropping the d least significant bits from each coefficient, thus producing the polynomial vector t1. This compression is an optimization for performance, not security. The low-order bits of t can be reconstructed from a small number of signatures and, therefore, need not be regarded as secret. The ML-DSA public key pk is a byte encoding of the public random seed ρ and the compressed polynomial vector t1. The ML-DSA private key sk is a byte encoding of the public random seed ρ, a private random seed K for use during signing, a 64-byte hash tr of the public key for use during signing, the secret polynomial 7In some cases, it is p…(truncated)"
+    },
+    {
+      "score": 0.02967032967032967,
+      "chunk_id": "NIST.FIPS.204::p0007::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 7,
+      "end_page": 7,
+      "text": "2 Glossary of Terms, Acronyms, and Symbols 2\n 2.1 Terms and Definitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2\n 2.2 Acronyms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5\n 2.3 Mathematical Symbols . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5\n 2.4 Notation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7\n 2.4.1 Rings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7\n 2.4.2 Vectors and Matrices . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7\n 2.5 NTT Representation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8\n\n3 Overview of the ML-DSA Signature Scheme 9\n 3.1 Security Properties . . . .…(truncated)"
+    },
+    {
+      "score": 0.05868294981198207,
+      "chunk_id": "NIST.FIPS.204::p0029::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 29,
+      "end_page": 29,
+      "text": "the platform may require hardware support for hashing to achieve acceptable performance but lack hardware support for SHAKE256 specifically. For some use cases, this may be addressed by signing a digest of the message along with some domain separation information rather than signing the message directly. This version of ML-DSA is known as “pre-hash” ML-DSA or HashML-DSA . In general, the “pure” ML-DSA version is preferred. While key generation for HashML-DSA is the same as for ML-DSA, it is not the same for the signing algorithm HashML-DSA.Sign or the verification algorithm HashML-DSA.Verify. Like ML-DSA, the signing algorithm of HashML-DSA takes the content to be signed, the private key, and a context as input, as well as a hash function or XOF that is to be used to pre-hash the content t…(truncated)"
+    }
+  ],
+  "draft_answer": "- ML-KEM is specified as a key-encapsulation mechanism [c1].\n- ML-DSA is specified as a digital signature scheme [c2].\n- This indicates the standards assign different core purposes to these schemes [c1][c2].",
+  "final_answer": "- ML-KEM is specified as a key-encapsulation mechanism [c1].\n- ML-DSA is specified as a digital signature scheme [c2].\n- This indicates the standards assign different core purposes to these schemes [c1][c2].",
+  "citations": [
+    {
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "chunk_id": "NIST.FIPS.203::p0010::c000",
+      "key": "c1"
+    },
+    {
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 19,
+      "end_page": 19,
+      "chunk_id": "NIST.FIPS.204::p0019::c000",
+      "key": "c2"
+    }
+  ],
+  "tool_calls": 1,
+  "steps": 5,
+  "retrieval_round": 1,
+  "trace": [
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 1,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "plan",
+      "action": "compare",
+      "reason": "Comparison intent detected with parsed topics.",
+      "query": null,
+      "args": {
+        "topic_a": "ML-KEM",
+        "topic_b": "ML-DSA"
+      },
+      "mode_hint": "general"
+    },
+    {
+      "type": "step",
+      "node": "retrieve",
+      "steps": 2,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "retrieval_round_started",
+      "round": 1,
+      "action": "compare",
+      "tool_calls": 1
+    },
+    {
+      "type": "evidence",
+      "n": 12
+    },
+    {
+      "type": "retrieval_round_result",
+      "round": 1,
+      "action": "compare",
+      "new_hits": 12,
+      "total_hits": 12,
+      "tool_stats": {
+        "n_a": 6,
+        "n_b": 6,
+        "n_merged": 12
+      },
+      "mode_hint": "general"
+    },
+    {
+      "type": "step",
+      "node": "assess_evidence",
+      "steps": 3,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "assessment_decision",
+      "sufficient": true,
+      "reasons": [],
+      "budget_reason": null,
+      "evidence_hits": 12,
+      "doc_diversity": 4,
+      "anchors": [],
+      "anchor_match": true,
+      "tool_calls": 1,
+      "steps": 3,
+      "retrieval_round": 1
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 4,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "answer",
+      "citations": 2
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 5,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "final_answer"
+    },
+    {
+      "type": "verify",
+      "result": "ok",
+      "stop_reason": "sufficient_evidence",
+      "refusal_reason": "",
+      "citations": 2
+    }
+  ],
+  "errors": [],
+  "evidence_sufficient": true,
+  "stop_reason": "sufficient_evidence",
+  "refusal_reason": "",
+  "last_retrieval_stats": {
+    "round": 1,
+    "action": "compare",
+    "new_hits": 12,
+    "total_hits": 12,
+    "tool_stats": {
+      "n_a": 6,
+      "n_b": 6,
+      "n_merged": 12
+    },
+    "mode_hint": "general"
+  }
+}

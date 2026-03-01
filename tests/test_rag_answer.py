@@ -41,6 +41,27 @@ def _make_hits(n: int) -> list[ChunkHit]:
     return hits
 
 
+def _make_compare_hits() -> list[ChunkHit]:
+    return [
+        ChunkHit(
+            score=1.0,
+            chunk_id="kem-1",
+            doc_id="NIST.FIPS.203",
+            start_page=10,
+            end_page=10,
+            text="This standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM).",
+        ),
+        ChunkHit(
+            score=0.9,
+            chunk_id="dsa-1",
+            doc_id="NIST.FIPS.204",
+            start_page=19,
+            end_page=19,
+            text="ML-DSA is a digital signature scheme based on CRYSTALS-DILITHIUM.",
+        ),
+    ]
+
+
 def test_refusal_on_empty_hits(monkeypatch):
     """
     Verifies that `build_cited_answer` refuses to answer if the initial
@@ -162,6 +183,152 @@ def test_citations_list_matches_used_keys(monkeypatch):
     assert "[c1]" in result.answer
     assert result.citations[0].key == "c1"
     assert [c.key for c in result.citations] == ["c1", "c2"]
+
+
+def test_accepts_multiple_citations_in_single_sentence(monkeypatch):
+    """
+    Verifies that one sentence can cite multiple evidence chunks for comparison-style claims.
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(rag_answer_module.SETTINGS, ASK_MIN_EVIDENCE_HITS=2),
+    )
+
+    def fake_gen(_prompt: str) -> str:
+        return "Comparison claim across both schemes [c1][c2]."
+
+    result = build_cited_answer(
+        question="What are the differences between ML-KEM and ML-DSA?",
+        hits=_make_hits(2),
+        generate_fn=fake_gen,
+    )
+
+    assert result.answer != REFUSAL_TEXT
+    assert [c.key for c in result.citations] == ["c1", "c2"]
+
+
+def test_accepts_uppercase_and_comma_grouped_citations(monkeypatch):
+    """
+    Verifies citation parsing accepts grouped keys like [C1, c2].
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(rag_answer_module.SETTINGS, ASK_MIN_EVIDENCE_HITS=2),
+    )
+
+    def fake_gen(_prompt: str) -> str:
+        return "Comparison claim across both schemes [C1, c2]."
+
+    result = build_cited_answer(
+        question="What are the differences between ML-KEM and ML-DSA?",
+        hits=_make_hits(2),
+        generate_fn=fake_gen,
+    )
+
+    assert result.answer != REFUSAL_TEXT
+    assert [c.key for c in result.citations] == ["c1", "c2"]
+
+
+def test_prompt_allows_multiple_citations_per_sentence(monkeypatch):
+    """
+    Locks the prompt contract so compare answers can cite multiple sources in one sentence.
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(rag_answer_module.SETTINGS, ASK_MIN_EVIDENCE_HITS=2),
+    )
+
+    captured = {"prompt": ""}
+
+    def fake_gen(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return "Comparison claim across both schemes [c1][c2]."
+
+    _ = build_cited_answer(
+        question="What are the differences between ML-KEM and ML-DSA?",
+        hits=_make_hits(2),
+        generate_fn=fake_gen,
+    )
+
+    assert "end with exactly one [c#]" not in captured["prompt"]
+    assert "end with one or more citation markers" in captured["prompt"]
+
+
+def test_comparison_fallback_kicks_in_when_model_refuses(monkeypatch):
+    """
+    Regression: compare queries should still return a cited answer when model output is refusal.
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(rag_answer_module.SETTINGS, ASK_MIN_EVIDENCE_HITS=2),
+    )
+
+    def fake_gen(_prompt: str) -> str:
+        return REFUSAL_TEXT
+
+    result = build_cited_answer(
+        question="What are the differences between ML-KEM and ML-DSA?",
+        hits=_make_compare_hits(),
+        generate_fn=fake_gen,
+    )
+
+    assert result.answer != REFUSAL_TEXT
+    assert len(result.citations) >= 2
+    assert {c.doc_id for c in result.citations} == {"NIST.FIPS.203", "NIST.FIPS.204"}
+
+
+def test_comparison_fallback_prefers_role_bearing_hits(monkeypatch):
+    """
+    If a higher-scoring hit lacks role text, fallback should prefer the role-bearing hit.
+    """
+    monkeypatch.setattr(
+        rag_answer_module,
+        "SETTINGS",
+        replace(rag_answer_module.SETTINGS, ASK_MIN_EVIDENCE_HITS=2),
+    )
+
+    hits = [
+        ChunkHit(
+            score=1.0,
+            chunk_id="kem-role",
+            doc_id="NIST.FIPS.203",
+            start_page=10,
+            end_page=10,
+            text="This standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM).",
+        ),
+        ChunkHit(
+            score=0.95,
+            chunk_id="dsa-no-role",
+            doc_id="NIST.FIPS.204",
+            start_page=29,
+            end_page=29,
+            text="This version of ML-DSA is known as pre-hash ML-DSA.",
+        ),
+        ChunkHit(
+            score=0.80,
+            chunk_id="dsa-role",
+            doc_id="NIST.FIPS.204",
+            start_page=19,
+            end_page=19,
+            text="ML-DSA is a digital signature scheme based on CRYSTALS-DILITHIUM.",
+        ),
+    ]
+
+    def fake_gen(_prompt: str) -> str:
+        return REFUSAL_TEXT
+
+    result = build_cited_answer(
+        question="What are the differences between ML-KEM and ML-DSA?",
+        hits=hits,
+        generate_fn=fake_gen,
+    )
+
+    assert result.answer != REFUSAL_TEXT
+    assert "digital signature scheme" in result.answer.lower()
 
 
 def test_deterministic_citation_key_assignment_across_hit_order(monkeypatch):

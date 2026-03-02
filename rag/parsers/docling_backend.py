@@ -24,9 +24,13 @@ Environment toggles:
     - DOCLING_NUM_THREADS (optional; integer)
     - DOCLING_ENABLE_FORMULA_ENRICHMENT (default: "1")
     - DOCLING_CODEFORMULA_PRESET (default: "granite_docling"; also try "codeformulav2")
-    - DOCLING_GENERATE_PAGE_IMAGES (default: "1")
+    - DOCLING_GENERATE_PAGE_IMAGES (default: "0")
     - DOCLING_IMAGES_SCALE (default: "2.0")
     - DOCLING_INJECT_FORMULAS_IN_MARKDOWN (default: "1")
+    - DOCLING_PAGE_BATCH_SIZE (default: "12")
+    - DOCLING_MIN_PAGE_BATCH_SIZE (default: "1")
+    - DOCLING_ADAPTIVE_BATCHING (default: "1")
+    - DOCLING_SET_PYTORCH_ALLOC_CONF (default: "1")
 
 Raises:
     ValueError: If ``parse_pdf`` is called without ``expected_pages``.
@@ -42,6 +46,7 @@ from pathlib import Path
 import html
 import os
 import re
+import gc
 from typing import Any
 
 from docling.document_converter import DocumentConverter
@@ -121,8 +126,42 @@ class DoclingBackend(ParserBackend):
     name = "docling"
 
     def __init__(self) -> None:
+        self._configure_torch_allocator()
         # Try to enable Docling enrichments (formula decoding) when available.
         self._converter = self._build_converter_with_enrichments()
+
+    def _configure_torch_allocator(self) -> None:
+        if not _env_flag("DOCLING_SET_PYTORCH_ALLOC_CONF", True):
+            return
+        if os.getenv("PYTORCH_CUDA_ALLOC_CONF"):
+            return
+
+        # Reduce CUDA allocator fragmentation by default when unset.
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+    def _cuda_memory_cleanup(self) -> None:
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                try:
+                    torch.cuda.ipc_collect()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _looks_like_oom(self, err: Exception) -> bool:
+        msg = str(err).lower()
+        return (
+            "out of memory" in msg
+            or "cuda out of memory" in msg
+            or "std::bad_alloc" in msg
+            or "unable to allocate" in msg
+            or "cuda error: out of memory" in msg
+        )
 
     def backend_version(self) -> str:
         try:
@@ -134,7 +173,7 @@ class DoclingBackend(ParserBackend):
 
     def _build_converter_with_enrichments(self) -> DocumentConverter:
         enable_formula = _env_flag("DOCLING_ENABLE_FORMULA_ENRICHMENT", True)
-        generate_images = _env_flag("DOCLING_GENERATE_PAGE_IMAGES", True)
+        generate_images = _env_flag("DOCLING_GENERATE_PAGE_IMAGES", False)
         images_scale = float(os.getenv("DOCLING_IMAGES_SCALE", "2.0") or "2.0")
         preset = (os.getenv("DOCLING_CODEFORMULA_PRESET", "granite_docling") or "granite_docling").strip()
         device = (os.getenv("DOCLING_DEVICE", "auto") or "auto").strip().lower()
@@ -262,44 +301,88 @@ class DoclingBackend(ParserBackend):
         doc = result.document
         return self._render_page_markdown(doc)
 
+    def _page_markdown_batch(self, pdf_path: Path, start_page: int, end_page: int) -> dict[int, str]:
+        result = self._converter.convert(pdf_path, page_range=(start_page, end_page))
+        doc = result.document
+        out: dict[int, str] = {}
+
+        try:
+            for page_no in range(start_page, end_page + 1):
+                try:
+                    out[page_no] = self._render_page_markdown(doc, page_no=page_no)
+                except Exception as e:
+                    print(
+                        f"[WARN] Docling batch render failed on {pdf_path.name} page={page_no}: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    try:
+                        out[page_no] = self._page_markdown(pdf_path, page_no)
+                    except Exception as e2:
+                        print(
+                            f"[WARN] Docling per-page fallback failed on {pdf_path.name} page={page_no}: "
+                            f"{type(e2).__name__}: {e2}"
+                        )
+                        out[page_no] = ""
+        finally:
+            del doc
+            self._cuda_memory_cleanup()
+
+        return out
+
     def parse_pdf(self, pdf_path: Path, *, expected_pages: int | None = None) -> list[ParsedPage]:
         if expected_pages is None:
             raise ValueError("DoclingBackend requires expected_pages for deterministic page mapping.")
 
         total_pages = int(expected_pages)
-        doc: Any | None = None
-        try:
-            # Fast path: convert once, then export each page deterministically.
-            result = self._converter.convert(pdf_path, page_range=(1, total_pages))
-            doc = result.document
-        except Exception as e:
-            print(
-                f"[WARN] Docling full-document conversion failed on {pdf_path.name}: "
-                f"{type(e).__name__}: {e}"
-            )
+        batch_size = max(1, int(_env_int("DOCLING_PAGE_BATCH_SIZE") or 12))
+        min_batch_size = max(1, int(_env_int("DOCLING_MIN_PAGE_BATCH_SIZE") or 1))
+        adaptive = _env_flag("DOCLING_ADAPTIVE_BATCHING", True)
+        batch_size = max(min_batch_size, batch_size)
+
+        page_markdown: dict[int, str] = {}
+        start_page = 1
+        while start_page <= total_pages:
+            end_page = min(total_pages, start_page + batch_size - 1)
+            try:
+                page_markdown.update(self._page_markdown_batch(pdf_path, start_page, end_page))
+                start_page = end_page + 1
+            except Exception as e:
+                is_oom = self._looks_like_oom(e)
+                if adaptive and is_oom and batch_size > min_batch_size:
+                    next_batch_size = max(min_batch_size, batch_size // 2)
+                    print(
+                        f"[WARN] Docling batch OOM on {pdf_path.name} pages={start_page}-{end_page}; "
+                        f"reducing batch_size {batch_size} -> {next_batch_size}"
+                    )
+                    batch_size = next_batch_size
+                    self._cuda_memory_cleanup()
+                    continue
+
+                print(
+                    f"[WARN] Docling batch conversion failed on {pdf_path.name} pages={start_page}-{end_page}: "
+                    f"{type(e).__name__}: {e}"
+                )
+                if is_oom:
+                    self._cuda_memory_cleanup()
+
+                # Per-page resilience without changing device policy.
+                for page_no in range(start_page, end_page + 1):
+                    try:
+                        page_markdown[page_no] = self._page_markdown(pdf_path, page_no)
+                    except Exception as e2:
+                        print(
+                            f"[WARN] Docling page fallback failed on {pdf_path.name} page={page_no}: "
+                            f"{type(e2).__name__}: {e2}"
+                        )
+                        page_markdown[page_no] = ""
+                    finally:
+                        self._cuda_memory_cleanup()
+
+                start_page = end_page + 1
 
         out: list[ParsedPage] = []
         for page_no in range(1, total_pages + 1):
-            markdown = ""
-            try:
-                if doc is not None:
-                    markdown = self._render_page_markdown(doc, page_no=page_no)
-                else:
-                    markdown = self._page_markdown(pdf_path, page_no)
-            except Exception as e:
-                print(
-                    f"[WARN] Docling failed on {pdf_path.name} page={page_no}: "
-                    f"{type(e).__name__}: {e}"
-                )
-                try:
-                    # Fallback for per-page resilience.
-                    markdown = self._page_markdown(pdf_path, page_no)
-                except Exception as e2:
-                    print(
-                        f"[WARN] Docling fallback failed on {pdf_path.name} page={page_no}: "
-                        f"{type(e2).__name__}: {e2}"
-                    )
-                    markdown = ""
+            markdown = str(page_markdown.get(page_no, "") or "")
             text = markdown_to_text(markdown)
             out.append(
                 ParsedPage(
@@ -312,5 +395,5 @@ class DoclingBackend(ParserBackend):
                 )
             )
 
-        out.sort(key=lambda row: int(row["page_number"]))
+        out.sort(key=lambda row: int(row.get("page_number", 0)))
         return out

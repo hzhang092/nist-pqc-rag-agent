@@ -66,11 +66,15 @@ def _env_int(name: str) -> int | None:
         return None
 
 
-_DOCLING_IMAGE_COMMENT_RE = re.compile(r"<!--\s*image\s*-->", re.IGNORECASE)
-_DOCLING_LOC_TAG_RE = re.compile(r"<loc_\d+>", re.IGNORECASE)
-_DOCLING_TEXT_LOC_SPAN_RE = re.compile(r"<text>(?:<loc_\d+>){2,}[^<]*</text>", re.IGNORECASE)
-_DOCLING_OPEN_TEXT_LOC_RE = re.compile(r"<text>(?:<loc_\d+>){2,}[^\n]*", re.IGNORECASE)
-_DOCLING_BROKEN_FORMULA_TAG_RE = re.compile(r"</?formula\s*>?", re.IGNORECASE)
+_DOCLING_IMAGE_COMMENT_RE = re.compile(r"<!--\s*image\s*-->", re.IGNORECASE) # Docling may insert these as placeholders for page images; they add noise without the actual image, so strip them out.
+_DOCLING_LOC_TAG_RE = re.compile(r"<loc_\d+>", re.IGNORECASE) # Docling may insert these location tags in formulas or text; they add noise and hurt retrieval quality, so strip them out.
+_DOCLING_TEXT_LOC_SPAN_RE = re.compile(r"<text>(?:<loc_\d+>){2,}[^<]*</text>", re.IGNORECASE) # Docling may produce malformed <text> spans that contain multiple location tags and no real content; these add noise without value, so strip them out entirely.
+_DOCLING_OPEN_TEXT_LOC_RE = re.compile(r"<text>(?:<loc_\d+>){2,}[^\n]*", re.IGNORECASE) # Docling may produce malformed open <text> spans that contain multiple location tags and no real content; these add noise without value, so strip the opening tag and everything after it.
+_DOCLING_BROKEN_FORMULA_TAG_RE = re.compile(r"</?formula\s*>?", re.IGNORECASE) # Some Docling versions produce broken <formula> tags that aren't properly closed or that appear in plaintext; these add noise without value, so strip them out.
+_DOCLING_LONG_QUAD_RUN_RE = re.compile(r"(?:\\,\s*)?(?:\\quad\s*(?:\\,\s*)?){6,}") # Docling may produce long runs of \quad (with optional \, and whitespace) in formulas; these add noise without value, so replace runs of 6 or more with a single space.
+_DOCLING_LONG_THINSPACE_RUN_RE = re.compile(r"(?:\\,\s*){12,}") # Docling may produce long runs of \, (with optional whitespace) in formulas; these add noise without value, so replace runs of 12 or more with a single space.
+_DOCLING_LONG_BARE_BACKSLASH_RUN_RE = re.compile(r"(?:\\(?:\s|$)){20,}") # Docling may emit very long runs of bare "\" layout tokens; these add noise without value, so replace long runs with a single space.  
+_DOCLING_HAT_ONLY_LINE_RE = re.compile(r"^(?:[\u0302\u02C6]\s*)+$") # Some Docling versions produce lines that are just hat accents (e.g., "̂") due to OCR artifacts; these add noise without value, so drop lines that are only hat characters and whitespace.
 
 
 def _sanitize_docling_markdown(markdown: str) -> str:
@@ -82,7 +86,20 @@ def _sanitize_docling_markdown(markdown: str) -> str:
     s = _DOCLING_LOC_TAG_RE.sub("", s)
     s = s.replace("<text>", "").replace("</text>", "")
     s = _DOCLING_BROKEN_FORMULA_TAG_RE.sub("", s)
-    s = "\n".join(ln.rstrip() for ln in s.split("\n"))
+    s = _DOCLING_LONG_QUAD_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_THINSPACE_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_BARE_BACKSLASH_RUN_RE.sub(" ", s)
+
+    kept_lines: list[str] = []
+    for ln in s.split("\n"):
+        line = ln.rstrip()
+        stripped = line.strip()
+        # Drop standalone hat-accent noise lines (e.g., lines that are just "̂").
+        if stripped and _DOCLING_HAT_ONLY_LINE_RE.fullmatch(stripped):
+            continue
+        kept_lines.append(line)
+
+    s = "\n".join(kept_lines)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
@@ -93,6 +110,9 @@ def _sanitize_formula_latex(formula: str) -> str:
     s = _DOCLING_BROKEN_FORMULA_TAG_RE.sub("", s)
     s = _DOCLING_LOC_TAG_RE.sub("", s)
     s = s.replace("<text>", "").replace("</text>", "")
+    s = _DOCLING_LONG_QUAD_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_THINSPACE_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_BARE_BACKSLASH_RUN_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 

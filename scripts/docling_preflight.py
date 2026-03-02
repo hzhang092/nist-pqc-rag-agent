@@ -24,6 +24,8 @@ import json
 from pathlib import Path
 import sys
 
+PAGE = 20
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -56,9 +58,9 @@ def main() -> int:
     pdf_path = pdfs[0]
     backend = DoclingBackend()
 
-    print(f"[INFO] Running Docling preflight on {pdf_path.name} page 1 ...")
+    print(f"[INFO] Running Docling preflight on {pdf_path.name} page {PAGE} ...")
     try:
-        pages = backend.parse_pdf(pdf_path, expected_pages=1)
+        pages = backend.parse_pdf(pdf_path, expected_pages=PAGE)
     except Exception as exc:
         msg = str(exc)
         print("[FAIL] Docling preflight failed.")
@@ -66,8 +68,8 @@ def main() -> int:
         print(f"[HINT] {_hint_for_error(msg)}")
         return 1
 
-    if len(pages) != 1:
-        print("[FAIL] Docling preflight did not return exactly one page for page-1 probe.")
+    if len(pages) != PAGE:
+        print(f"[FAIL] Docling preflight did not return exactly {PAGE} pages for page-{PAGE} probe.")
         print(f"[ERROR] parsed_pages={len(pages)}")
         return 1
 

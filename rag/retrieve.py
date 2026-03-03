@@ -16,47 +16,16 @@ How to use (CLI):
     python -m rag.retrieve "ML-KEM" --no-query-fusion
     python -m rag.retrieve "ML-KEM.Decaps" --rerank-pool 40
     python -m rag.retrieve "Algorithm 19" --no-rerank
-
-How to use (Python):
-    from rag.retrieve import retrieve
-    hits = retrieve("ML-KEM key generation", k=5, mode="hybrid")
-
-Used by:
-    - `rag.search` (search CLI)
-    - `rag.ask` (QA CLI)
-    - `scripts/mini_retrieval_sanity.py` (sanity evaluation script)
-    - `tests/test_query_fusion.py` (`query_variants`)
-    - `tests/test_retrieve_rrf.py` (`rrf_fuse`)
-
-Usage:
-    python -m rag.retrieve "Algorithm 19"
-
-Flags:
-    --k
-        Final number of hits returned to the caller.
-    --mode
-        Retrieval mode: "base" uses one backend, "hybrid" uses FAISS+BM25.
-    --backend
-        Backend for base mode (e.g., faiss, bm25).
-    --k0
-        RRF constant in 1/(k0 + rank); lower values favor top ranks more.
-    --candidate-multiplier
-        Candidate expansion per query before fusion.
-    --rerank-pool
-        Size of fused candidate pool considered by reranker before truncation to k.
-    --no-query-fusion
-        Disable deterministic domain rewrites of the input query.
-    --no-rerank
-        Disable lexical reranking stage after fusion.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
-from typing import Dict, Iterable, List, Sequence, TYPE_CHECKING
+from typing import Dict, Iterable, List, Literal, Sequence, TYPE_CHECKING, TypedDict
 
 from rag.config import SETTINGS
+from rag.text_normalize import normalize_identifier_like_spans
 from rag.retriever import factory as retriever_factory
 from rag.retriever.base import ChunkHit
 from rag.retriever.bm25_retriever import BM25Retriever
@@ -66,47 +35,157 @@ if TYPE_CHECKING:
     from rag.retriever.faiss_retriever import FaissRetriever
 
 
+ModeHint = Literal["definition", "algorithm", "compare", "general"]
+MODE_HINT_VALUES = ("definition", "algorithm", "compare", "general")
+
+MODE_WEIGHTS: Dict[ModeHint, tuple[float, float, float]] = {
+    "definition": (0.35, 0.45, 0.20),  # prior, bm25, anchors
+    "algorithm": (0.45, 0.20, 0.35),
+    "compare": (0.60, 0.30, 0.10),
+    "general": (0.70, 0.20, 0.10),
+}
+
+KNOWN_ACRONYM_ANCHORS = {
+    "mlwe": "MLWE",
+    "lwe": "LWE",
+    "sis": "SIS",
+    "msis": "MSIS",
+    "kdf": "KDF",
+}
+
+TECH_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-._][A-Za-z0-9]+)+")
+ALGORITHM_NUM_RE = re.compile(r"\balgorithm\s+(\d+)\b", flags=re.IGNORECASE)
+ACRONYM_RE = re.compile(r"\b[A-Z]{2,8}\b")
+COMPARE_TOPICS_RE = re.compile(
+    r"(?:compare|comparison\s+of|difference(?:s)?\s+between)\s+"
+    r"(?P<a>.+?)\s+(?:and|vs|versus)\s+(?P<b>.+?)(?:\?|$)",
+    flags=re.IGNORECASE,
+)
+DEFINITION_TERM_RE = re.compile(
+    r"(?:definition\s+of|define|what\s+is|what(?:'s|\s+is)|what\s+does)\s+"
+    r"(?P<term>[A-Za-z0-9][A-Za-z0-9._-]*)",
+    flags=re.IGNORECASE,
+)
+WHAT_DOES_MEAN_RE = re.compile(
+    r"what\s+does\s+(?P<term>[A-Za-z0-9][A-Za-z0-9._-]*)\s+mean",
+    flags=re.IGNORECASE,
+)
+
+
+class RetrievalStageOutputs(TypedDict):
+    final_hits: List[ChunkHit]
+    pre_rerank_fused_hits: List[ChunkHit]
+    post_rerank_hits: List[ChunkHit]
+    rerank_pool: int
+
+
 def _tie_break_key(hit: ChunkHit) -> tuple:
     return (hit.doc_id, hit.start_page, hit.chunk_id)
 
 
-def _eval_rank_key(hit: ChunkHit) -> tuple:
-    """Stable eval ranking key for deterministic metric computation."""
-    return (
-        -float(hit.score),
-        hit.doc_id,
-        int(hit.start_page),
-        int(hit.end_page),
-        hit.chunk_id,
-    )
+def _dedupe_preserve_order(items: Iterable[str], *, limit: int | None = None) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for item in items:
+        key = str(item or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+        if limit is not None and len(out) >= limit:
+            break
+    return out
 
 
-TECH_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-._][A-Za-z0-9]+)+")
-ALGORITHM_NUM_RE = re.compile(r"\balgorithm\s+(\d+)\b", flags=re.IGNORECASE)
+def _resolve_mode_hint(mode_hint: str | None, query: str) -> ModeHint:
+    if mode_hint in MODE_HINT_VALUES:
+        return mode_hint  # type: ignore[return-value]
+
+    normalized_query = normalize_identifier_like_spans(query or "")
+    ql = normalized_query.lower()
+    if any(x in ql for x in ("compare", "difference between", "differences between", " vs ", " versus ")):
+        return "compare"
+    if "algorithm" in ql or "shake" in ql or "table" in ql:
+        return "algorithm"
+    if ql.startswith(("define", "what is", "what's", "what does")) or "stands for" in ql:
+        return "definition"
+    return "general"
 
 
-def query_variants(query: str) -> List[str]:
+def _extract_compare_topics(query: str) -> tuple[str | None, str | None]:
+    match = COMPARE_TOPICS_RE.search(query)
+    if not match:
+        return None, None
+    topic_a = str(match.group("a") or "").strip(" .;,:")
+    topic_b = str(match.group("b") or "").strip(" .;,:")
+    if not topic_a or not topic_b:
+        return None, None
+    return topic_a, topic_b
+
+
+def _extract_definition_term(query: str) -> str | None:
+    match = WHAT_DOES_MEAN_RE.search(query)
+    if match:
+        term = str(match.group("term") or "").strip(" .;,:")
+        if term:
+            return term
+    match = DEFINITION_TERM_RE.search(query)
+    if match:
+        term = str(match.group("term") or "").strip(" .;,:")
+        if term:
+            return term
+    return None
+
+
+def query_variants(
+    query: str,
+    *,
+    mode_hint: str | None = None,
+    max_variants: int = 4,
+    enable_mode_templates: bool = True,
+) -> List[str]:
     """Creates deterministic, domain-specific rewrites without using an LLM."""
-    original = query.strip()
+    original = normalize_identifier_like_spans(query.strip())
     if not original:
         return []
+    if max_variants <= 0:
+        raise ValueError("max_variants must be > 0")
 
+    resolved_mode = _resolve_mode_hint(mode_hint, original)
+    lowered = original.lower()
     variants: List[str] = [original]
 
-    technical_tokens: List[str] = []
-    seen = set()
-    for token in TECH_TOKEN_RE.findall(original):
-        if token not in seen:
-            seen.add(token)
-            technical_tokens.append(token)
+    if enable_mode_templates and resolved_mode == "definition":
+        term = _extract_definition_term(original)
+        if term:
+            variants.extend(
+                [
+                    f"definition of {term}",
+                    f"{term} stands for",
+                    f"{term} notation",
+                ]
+            )
 
+    if enable_mode_templates and resolved_mode == "compare":
+        topic_a, topic_b = _extract_compare_topics(original)
+        if topic_a and topic_b:
+            variants.extend(
+                [
+                    f"{topic_a} intended use-cases",
+                    f"{topic_b} intended use-cases",
+                    f"{topic_a} vs {topic_b}",
+                ]
+            )
+
+    if enable_mode_templates and "pqc" in lowered and "standards" in lowered:
+        variants.append("FIPS 203 FIPS 204 FIPS 205 ML-KEM ML-DSA SLH-DSA")
+
+    technical_tokens = _dedupe_preserve_order(TECH_TOKEN_RE.findall(original))
     if technical_tokens:
         variants.append(" ".join(technical_tokens))
 
-    lowered = original.lower()
     if "ml-kem" in lowered and "key generation" in lowered:
         variants.append("ML-KEM.KeyGen key generation")
-
     if "ml-dsa" in lowered and "signing" in lowered:
         variants.append("ML-DSA.Sign")
     if "ml-dsa" in lowered and "verify" in lowered:
@@ -121,15 +200,7 @@ def query_variants(query: str) -> List[str]:
         variants.append(f"Algorithm {alg_match.group(1)}")
         variants.append(f"Algorithm {alg_match.group(1)} ML-KEM.KeyGen")
 
-    # Stable de-dup while preserving order
-    deduped: List[str] = []
-    seen_variants = set()
-    for item in variants:
-        key = item.strip()
-        if key and key not in seen_variants:
-            deduped.append(key)
-            seen_variants.add(key)
-    return deduped
+    return _dedupe_preserve_order(variants, limit=max_variants)
 
 
 def rrf_fuse(rankings: Sequence[Iterable[ChunkHit]], top_k: int, k0: int = 60) -> List[ChunkHit]:
@@ -185,15 +256,68 @@ def rrf_fuse(rankings: Sequence[Iterable[ChunkHit]], top_k: int, k0: int = 60) -
     return fused
 
 
-def _query_technical_tokens(query: str) -> List[str]:
-    tokens = []
-    seen = set()
-    for token in TECH_TOKEN_RE.findall(query):
-        lowered = token.lower()
-        if lowered not in seen:
-            seen.add(lowered)
-            tokens.append(lowered)
-    return tokens
+def _query_anchor_tokens(query: str, mode_hint: str | None = None) -> List[str]:
+    resolved_mode = _resolve_mode_hint(mode_hint, query)
+    normalized_query = normalize_identifier_like_spans(query)
+    tokens = [tok.lower() for tok in TECH_TOKEN_RE.findall(normalized_query)]
+
+    if resolved_mode == "definition":
+        for acronym in ACRONYM_RE.findall(normalized_query):
+            tokens.append(acronym.lower())
+        lower_query = normalized_query.lower()
+        for k, v in KNOWN_ACRONYM_ANCHORS.items():
+            if k in lower_query:
+                tokens.append(v.lower())
+        term = _extract_definition_term(normalized_query)
+        if term:
+            tokens.append(term.lower())
+
+    return _dedupe_preserve_order(tokens)
+
+
+def _anchor_overlap_count(anchor_tokens: List[str], text: str) -> int:
+    if not anchor_tokens or not text:
+        return 0
+    haystack = normalize_identifier_like_spans(text).lower()
+    overlap = 0
+    for token in anchor_tokens:
+        if not token:
+            continue
+        if re.search(r"[._-]", token):
+            if token in haystack:
+                overlap += 1
+            continue
+        if re.search(rf"\b{re.escape(token)}\b", haystack):
+            overlap += 1
+    return overlap
+
+
+def _minmax_norm(values: List[float]) -> List[float]:
+    if not values:
+        return []
+    lo = min(values)
+    hi = max(values)
+    if hi <= lo:
+        return [0.0 for _ in values]
+    return [(v - lo) / (hi - lo) for v in values]
+
+
+def _rank_prior_norm(n: int) -> List[float]:
+    if n <= 0:
+        return []
+    if n == 1:
+        return [1.0]
+    return [1.0 - (idx / float(n - 1)) for idx in range(n)]
+
+
+def _passes_promotion_gate(mode: ModeHint, *, anchor_overlap: int, bm25_norm: float) -> bool:
+    if mode == "definition":
+        return anchor_overlap >= 1 or bm25_norm >= 0.55
+    if mode == "algorithm":
+        return anchor_overlap >= 2 or (anchor_overlap >= 1 and bm25_norm >= 0.60)
+    if mode == "compare":
+        return anchor_overlap >= 1 and bm25_norm >= 0.65
+    return anchor_overlap >= 2 or bm25_norm >= 0.70
 
 
 def rerank_fused_hits(
@@ -201,36 +325,83 @@ def rerank_fused_hits(
     hits: List[ChunkHit],
     top_k: int,
     bm25: BM25Retriever,
+    mode_hint: str | None = None,
 ) -> List[ChunkHit]:
-    """Lightweight rerank by exact technical token presence then BM25 lexical score."""
-    technical_tokens = _query_technical_tokens(query)
+    """
+    Deterministic do-no-harm rerank:
+    - preserve fused order by default;
+    - only promote candidates that clear strict mode-aware gates.
+    """
+    if top_k <= 0:
+        return []
+    if not hits:
+        return []
 
-    def has_exact_token(hit: ChunkHit) -> bool:
-        if not technical_tokens:
-            return False
-        haystack = (hit.text or "").lower()
-        return any(token in haystack for token in technical_tokens)
+    resolved_mode = _resolve_mode_hint(mode_hint, query)
+    anchor_tokens = _query_anchor_tokens(query, mode_hint=resolved_mode)
+    prior_w, bm25_w, anchors_w = MODE_WEIGHTS[resolved_mode]
 
-    scored = []
-    for hit in hits:
-        bm25_score = bm25.score_text(query, hit.text or "")
-        scored.append((has_exact_token(hit), bm25_score, hit))
+    prior_scores = [float(hit.score) for hit in hits]
+    prior_norm = _minmax_norm(prior_scores)
+    if all(v == 0.0 for v in prior_norm):
+        prior_norm = _rank_prior_norm(len(hits))
 
-    ranked = sorted(
-        scored,
-        key=lambda item: (
-            -int(item[0]),
-            -item[1],
-            item[2].doc_id,
-            item[2].start_page,
-            item[2].chunk_id,
+    bm25_scores = [float(bm25.score_text(query, hit.text or "")) for hit in hits]
+    bm25_norm = _minmax_norm(bm25_scores)
+    anchor_overlap = [_anchor_overlap_count(anchor_tokens, hit.text or "") for hit in hits]
+    max_overlap = max(anchor_overlap) if anchor_overlap else 0
+    anchor_norm = [
+        (float(v) / float(max_overlap)) if max_overlap > 0 else 0.0
+        for v in anchor_overlap
+    ]
+
+    rows = []
+    for idx, hit in enumerate(hits):
+        promotion_score = (
+            prior_w * prior_norm[idx]
+            + bm25_w * bm25_norm[idx]
+            + anchors_w * anchor_norm[idx]
+        )
+        rows.append(
+            {
+                "hit": hit,
+                "idx": idx,
+                "anchor_overlap": anchor_overlap[idx],
+                "bm25_norm": bm25_norm[idx],
+                "promotion_score": float(promotion_score),
+                "promote": _passes_promotion_gate(
+                    resolved_mode,
+                    anchor_overlap=anchor_overlap[idx],
+                    bm25_norm=bm25_norm[idx],
+                ),
+            }
+        )
+
+    promoted = [row for row in rows if row["promote"]]
+    if not promoted:
+        return hits[:top_k]
+
+    promoted_sorted = sorted(
+        promoted,
+        key=lambda row: (
+            -row["promotion_score"],
+            row["idx"],
+            row["hit"].doc_id,
+            row["hit"].start_page,
+            row["hit"].chunk_id,
         ),
     )
+    max_promoted = min(8, top_k // 2)
+    if max_promoted <= 0:
+        return hits[:top_k]
+    promoted_hits = [row["hit"] for row in promoted_sorted[:max_promoted]]
+    promoted_ids = {h.chunk_id for h in promoted_hits}
+    remaining_hits = [h for h in hits if h.chunk_id not in promoted_ids]
+    reranked = promoted_hits + remaining_hits
+    return reranked[:top_k]
 
-    return [item[2] for item in ranked[:top_k]]
 
-
-def hybrid_search(
+def _build_hybrid_stage_outputs(
     query: str,
     top_k: int = SETTINGS.TOP_K,
     candidate_multiplier: int = 4,
@@ -238,16 +409,21 @@ def hybrid_search(
     use_query_fusion: bool = True,
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
-) -> List[ChunkHit]:
-    """Runs FAISS + BM25 retrieval and fuses the rankings with RRF."""
+) -> RetrievalStageOutputs:
+    """Runs hybrid retrieval and returns stage outputs for diagnostics."""
     if top_k <= 0:
         raise ValueError("top_k must be > 0")
     if candidate_multiplier <= 0:
         raise ValueError("candidate_multiplier must be > 0")
     if rerank_pool <= 0:
         raise ValueError("rerank_pool must be > 0")
+    if diagnostic_pre_rerank_depth <= 0:
+        raise ValueError("diagnostic_pre_rerank_depth must be > 0")
 
     if faiss is None:
         try:
@@ -262,9 +438,20 @@ def hybrid_search(
 
     bm25_retriever = bm25 or BM25Retriever()
 
+    normalized_query = normalize_identifier_like_spans(query)
+    resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
     per_source_k = max(top_k * candidate_multiplier, top_k)
     fused_pool = max(top_k, rerank_pool)
-    queries = query_variants(query) if use_query_fusion else [query]
+    queries = (
+        query_variants(
+            normalized_query,
+            mode_hint=resolved_mode,
+            max_variants=4,
+            enable_mode_templates=enable_mode_variants,
+        )
+        if use_query_fusion
+        else [normalized_query]
+    )
 
     rankings: List[List[ChunkHit]] = []
     for q in queries:
@@ -273,10 +460,122 @@ def hybrid_search(
         rankings.append(vector_hits)
         rankings.append(bm25_hits)
 
-    fused = rrf_fuse(rankings, top_k=fused_pool, k0=k0)
+    pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
+    pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
+    rerank_input = pre_rerank_fused[:fused_pool]
+
     if enable_rerank:
-        return rerank_fused_hits(query=query, hits=fused, top_k=top_k, bm25=bm25_retriever)
-    return fused[:top_k]
+        post_rerank_hits = rerank_fused_hits(
+            query=normalized_query,
+            hits=rerank_input,
+            top_k=fused_pool,
+            bm25=bm25_retriever,
+            mode_hint=resolved_mode,
+        )
+    else:
+        post_rerank_hits = rerank_input
+
+    return {
+        "final_hits": post_rerank_hits[:top_k],
+        "pre_rerank_fused_hits": pre_rerank_fused,
+        "post_rerank_hits": post_rerank_hits,
+        "rerank_pool": fused_pool,
+    }
+
+
+def hybrid_search(
+    query: str,
+    top_k: int = SETTINGS.TOP_K,
+    candidate_multiplier: int = 4,
+    k0: int = 60,
+    use_query_fusion: bool = True,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+    faiss: "FaissRetriever | None" = None,
+    bm25: BM25Retriever | None = None,
+) -> List[ChunkHit]:
+    """Runs FAISS + BM25 retrieval and fuses the rankings with RRF."""
+    outputs = _build_hybrid_stage_outputs(
+        query=query,
+        top_k=top_k,
+        candidate_multiplier=candidate_multiplier,
+        k0=k0,
+        use_query_fusion=use_query_fusion,
+        enable_rerank=enable_rerank,
+        rerank_pool=rerank_pool,
+        diagnostic_pre_rerank_depth=max(60, rerank_pool, top_k),
+        mode_hint=mode_hint,
+        enable_mode_variants=enable_mode_variants,
+        faiss=faiss,
+        bm25=bm25,
+    )
+    return outputs["final_hits"]
+
+
+def _build_base_stage_outputs(
+    query: str,
+    top_k: int = SETTINGS.TOP_K,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    candidate_multiplier: int = 4,
+    k0: int = 60,
+    use_query_fusion: bool = True,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+) -> RetrievalStageOutputs:
+    """Runs base retrieval and returns stage outputs for diagnostics."""
+    if top_k <= 0:
+        raise ValueError("top_k must be > 0")
+    if candidate_multiplier <= 0:
+        raise ValueError("candidate_multiplier must be > 0")
+    if rerank_pool <= 0:
+        raise ValueError("rerank_pool must be > 0")
+    if diagnostic_pre_rerank_depth <= 0:
+        raise ValueError("diagnostic_pre_rerank_depth must be > 0")
+
+    normalized_query = normalize_identifier_like_spans(query)
+    resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
+    retriever = get_retriever(backend)
+    per_query_k = max(top_k * candidate_multiplier, top_k)
+    fused_pool = max(top_k, rerank_pool)
+    queries = (
+        query_variants(
+            normalized_query,
+            mode_hint=resolved_mode,
+            max_variants=4,
+            enable_mode_templates=enable_mode_variants,
+        )
+        if use_query_fusion
+        else [normalized_query]
+    )
+
+    rankings = [retriever.search(q, k=per_query_k) for q in queries]
+    pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
+    pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
+    rerank_input = pre_rerank_fused[:fused_pool]
+
+    if enable_rerank:
+        bm25_retriever = BM25Retriever()
+        post_rerank_hits = rerank_fused_hits(
+            query=normalized_query,
+            hits=rerank_input,
+            top_k=fused_pool,
+            bm25=bm25_retriever,
+            mode_hint=resolved_mode,
+        )
+    else:
+        post_rerank_hits = rerank_input
+
+    return {
+        "final_hits": post_rerank_hits[:top_k],
+        "pre_rerank_fused_hits": pre_rerank_fused,
+        "post_rerank_hits": post_rerank_hits,
+        "rerank_pool": fused_pool,
+    }
 
 
 def base_search(
@@ -288,26 +587,24 @@ def base_search(
     use_query_fusion: bool = True,
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
 ) -> List[ChunkHit]:
     """Runs single-backend retrieval; optionally fuses deterministic query variants."""
-    if top_k <= 0:
-        raise ValueError("top_k must be > 0")
-    if candidate_multiplier <= 0:
-        raise ValueError("candidate_multiplier must be > 0")
-    if rerank_pool <= 0:
-        raise ValueError("rerank_pool must be > 0")
-
-    retriever = get_retriever(backend)
-    per_query_k = max(top_k * candidate_multiplier, top_k)
-    fused_pool = max(top_k, rerank_pool)
-    queries = query_variants(query) if use_query_fusion else [query]
-
-    rankings = [retriever.search(q, k=per_query_k) for q in queries]
-    fused = rrf_fuse(rankings, top_k=fused_pool, k0=k0)
-    if enable_rerank:
-        bm25_retriever = BM25Retriever()
-        return rerank_fused_hits(query=query, hits=fused, top_k=top_k, bm25=bm25_retriever)
-    return fused[:top_k]
+    outputs = _build_base_stage_outputs(
+        query=query,
+        top_k=top_k,
+        backend=backend,
+        candidate_multiplier=candidate_multiplier,
+        k0=k0,
+        use_query_fusion=use_query_fusion,
+        enable_rerank=enable_rerank,
+        rerank_pool=rerank_pool,
+        diagnostic_pre_rerank_depth=max(60, rerank_pool, top_k),
+        mode_hint=mode_hint,
+        enable_mode_variants=enable_mode_variants,
+    )
+    return outputs["final_hits"]
 
 
 def retrieve(
@@ -320,6 +617,8 @@ def retrieve(
     k0: int = SETTINGS.RETRIEVAL_RRF_K0,
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
 ) -> List[ChunkHit]:
     """Shared retrieval entrypoint for search/ask (base or hybrid + fusion)."""
     selected_mode = mode.lower().strip()
@@ -332,6 +631,8 @@ def retrieve(
             use_query_fusion=use_query_fusion,
             enable_rerank=enable_rerank,
             rerank_pool=rerank_pool,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
         )
     if selected_mode == "base":
         return base_search(
@@ -343,48 +644,61 @@ def retrieve(
             use_query_fusion=use_query_fusion,
             enable_rerank=enable_rerank,
             rerank_pool=rerank_pool,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
         )
     raise ValueError(f"Unknown retrieval mode: {mode}")
 
 
-def retrieve_for_eval(
+def retrieve_with_stages(
     query: str,
-    mode: str = SETTINGS.RETRIEVAL_MODE,
     k: int = SETTINGS.TOP_K,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
     backend: str = SETTINGS.VECTOR_BACKEND,
-    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    use_query_fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
     candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
-    fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
-    evidence_window: bool = False,
-    cheap_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
-    debug: bool = False,
-) -> List[dict]:
-    """
-    Eval-friendly retrieval adapter with a stable row schema.
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+) -> RetrievalStageOutputs:
+    """Retrieval entrypoint that also returns stage outputs for evaluation diagnostics."""
+    selected_mode = mode.lower().strip()
+    if selected_mode == "hybrid":
+        return _build_hybrid_stage_outputs(
+            query=query,
+            top_k=k,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
+        )
+    if selected_mode == "base":
+        return _build_base_stage_outputs(
+            query=query,
+            top_k=k,
+            backend=backend,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
+        )
+    raise ValueError(f"Unknown retrieval mode: {mode}")
 
-    Returns a deterministic list of dictionaries so evaluation code can stay
-    decoupled from `ChunkHit` internals.
-    """
-    _ = evidence_window
-    _ = debug
 
-    hits = retrieve(
-        query=query,
-        k=k,
-        mode=mode,
-        backend=backend,
-        use_query_fusion=fusion,
-        candidate_multiplier=candidate_multiplier,
-        k0=k0,
-        enable_rerank=cheap_rerank,
-        rerank_pool=rerank_pool,
-    )
-
-    ordered_hits = sorted(hits, key=_eval_rank_key)
-
+def _hits_to_eval_rows(hits: List[ChunkHit], *, mode: str) -> List[dict]:
     rows: List[dict] = []
-    for rank, hit in enumerate(ordered_hits, start=1):
+    for rank, hit in enumerate(hits, start=1):
         rows.append(
             {
                 "chunk_id": hit.chunk_id,
@@ -399,6 +713,91 @@ def retrieve_for_eval(
         )
     return rows
 
+
+def retrieve_for_eval_with_stages(
+    query: str,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    k: int = SETTINGS.TOP_K,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
+    evidence_window: bool = False,
+    cheap_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    debug: bool = False,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+) -> dict:
+    """Eval adapter that returns final hits plus stage-level diagnostic hit lists."""
+    _ = evidence_window
+    _ = debug
+
+    stages = retrieve_with_stages(
+        query=query,
+        k=k,
+        mode=mode,
+        backend=backend,
+        use_query_fusion=fusion,
+        candidate_multiplier=candidate_multiplier,
+        k0=k0,
+        enable_rerank=cheap_rerank,
+        rerank_pool=rerank_pool,
+        diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+        mode_hint=mode_hint,
+        enable_mode_variants=enable_mode_variants,
+    )
+
+    return {
+        "hits": _hits_to_eval_rows(stages["final_hits"], mode=mode),
+        "pre_rerank_fused_hits": _hits_to_eval_rows(stages["pre_rerank_fused_hits"], mode=mode),
+        "post_rerank_hits": _hits_to_eval_rows(stages["post_rerank_hits"], mode=mode),
+        "rerank_pool": int(stages["rerank_pool"]),
+    }
+
+
+def retrieve_for_eval(
+    query: str,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    k: int = SETTINGS.TOP_K,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
+    evidence_window: bool = False,
+    cheap_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    debug: bool = False,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+) -> List[dict]:
+    """
+    Eval-friendly retrieval adapter with a stable row schema.
+
+    Returns a deterministic list of dictionaries so evaluation code can stay
+    decoupled from `ChunkHit` internals.
+    """
+    _ = evidence_window
+    _ = debug
+
+    stage_rows = retrieve_for_eval_with_stages(
+        query=query,
+        mode=mode,
+        k=k,
+        backend=backend,
+        k0=k0,
+        candidate_multiplier=candidate_multiplier,
+        fusion=fusion,
+        evidence_window=evidence_window,
+        cheap_rerank=cheap_rerank,
+        rerank_pool=rerank_pool,
+        debug=debug,
+        diagnostic_pre_rerank_depth=max(60, rerank_pool, k),
+        mode_hint=mode_hint,
+        enable_mode_variants=enable_mode_variants,
+    )
+    return stage_rows["hits"]
 
 
 def main() -> None:
@@ -426,12 +825,23 @@ def main() -> None:
         default=SETTINGS.RETRIEVAL_RERANK_POOL,
         help="Number of fused candidates considered before final rerank truncation.",
     )
+    parser.add_argument(
+        "--mode-hint",
+        type=str,
+        default=None,
+        choices=list(MODE_HINT_VALUES),
+        help="Optional intent hint used for rerank weighting and query variants.",
+    )
+    parser.add_argument(
+        "--no-mode-variants",
+        action="store_true",
+        help="Disable mode-aware variant templates and keep legacy-style variants only.",
+    )
     parser.add_argument("--no-query-fusion", action="store_true", help="Disable deterministic query rewrites.")
     parser.add_argument("--no-rerank", action="store_true", help="Disable lightweight lexical reranking.")
     args = parser.parse_args()
 
     if args.mode == "base":
-        # Validate backend names through existing factory behavior.
         retriever_factory.get_retriever(args.backend)
 
     qtext = " ".join(args.query).strip()
@@ -445,6 +855,8 @@ def main() -> None:
         k0=args.k0,
         enable_rerank=not args.no_rerank,
         rerank_pool=args.rerank_pool,
+        mode_hint=args.mode_hint,
+        enable_mode_variants=not args.no_mode_variants,
     )
 
     print(f"\nQuery: {qtext}\n")

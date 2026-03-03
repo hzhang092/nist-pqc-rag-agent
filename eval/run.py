@@ -20,6 +20,7 @@ Flags:
     --candidate-multiplier: candidate_multiplier for retrieval (default: SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER)
     --fusion / --no-fusion: enable or disable query fusion in retrieval (default: enabled)
     --rerank / --no-rerank: enable or disable rerank in retrieval (default: enabled)
+    --no-mode-variants: disable mode-aware query-variant templates (ablation control)
     --rerank-pool: k value for retrieval rerank pool (default: SETTINGS.RETRIEVAL_RERANK_POOL)
     --near-page-tolerance: page slack for relaxed diagnostics (doc match + overlap within ±N pages, default: 1)
     --allow-unlabeled: allow answerable=true questions with empty gold spans (these are skipped in retrieval metrics, default: false)
@@ -48,7 +49,7 @@ from eval.metrics import (
     safe_mean,
 )
 from rag.config import SETTINGS
-from rag.retrieve import retrieve_for_eval
+from rag.retrieve import retrieve_for_eval_with_stages
 
 
 def _run_ask_json(
@@ -144,6 +145,43 @@ def _gold_hit_ranks(
         if any(matcher(hit, g) for g in gold):
             ranks.append(int(hit.get("rank", 0)))
     return ranks
+
+
+def _first_gold_rank_or_none(
+    hits: List[dict],
+    gold: List[dict],
+    k: int,
+    matcher: Callable[[dict, dict], bool] = hit_matches_gold,
+) -> int | None:
+    ranks = _gold_hit_ranks(hits=hits, gold=gold, k=k, matcher=matcher)
+    return min(ranks) if ranks else None
+
+
+def _classify_rerank_miss_cause(
+    *,
+    gold_in_pre_rerank_fused: bool,
+    gold_in_rerank_pool: bool,
+    gold_first_rank_pre_rerank_pool: int | None,
+    gold_first_rank_post_rerank: int | None,
+    gold_demoted_by_rerank: bool,
+    primary_k: int,
+) -> str:
+    if not gold_in_pre_rerank_fused:
+        return "upstream_missing"
+    if gold_in_pre_rerank_fused and not gold_in_rerank_pool:
+        return "outside_pool"
+    if gold_in_rerank_pool:
+        if gold_first_rank_post_rerank is not None and int(gold_first_rank_post_rerank) <= int(primary_k):
+            return "retained_or_recovered"
+        if gold_demoted_by_rerank:
+            return "rerank_demotion"
+        if (
+            gold_first_rank_pre_rerank_pool is not None
+            and int(gold_first_rank_pre_rerank_pool) > int(primary_k)
+        ):
+            return "rerank_insufficient_promotion"
+        return "rerank_demotion"
+    return "retained_or_recovered"
 
 
 def _top_hit_ids(hits: List[dict], limit: int = 10) -> List[dict]:
@@ -250,12 +288,15 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
         )
 
     sec_at_k = sec.get("hit_rate_at_k", {})
+    miss_cause_counts = sec.get("miss_cause_counts", {})
     if sec_at_k:
         lines.extend(
             [
                 "",
                 "### Secondary Diagnostics",
                 f"- near_page_tolerance: {sec.get('near_page_tolerance')}",
+                f"- diagnostic_pre_rerank_depth: {sec.get('diagnostic_pre_rerank_depth')}",
+                f"- rerank_pool: {sec.get('rerank_pool')}",
             ]
         )
         for key in sorted(
@@ -268,6 +309,9 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
                 f"doc_only={_fmt(diag.get('doc_only'))}, "
                 f"near_page={_fmt(diag.get('near_page_tolerance'))}"
             )
+        if miss_cause_counts:
+            parts = [f"{k}:{int(v)}" for k, v in sorted(miss_cause_counts.items(), key=lambda kv: kv[0])]
+            lines.append(f"- miss_cause_counts: {', '.join(parts)}")
     lines.extend(
         [
             "",
@@ -303,10 +347,17 @@ def _build_summary_markdown(summary: Dict[str, Any]) -> str:
         lines.append("- none")
     else:
         for row in missed:
+            pre_fused = row.get("gold_first_rank_pre_rerank_fused")
+            pre_pool = row.get("gold_first_rank_pre_rerank_pool")
+            post = row.get("gold_first_rank_post_rerank")
+            cause = row.get("rerank_miss_cause")
             lines.append(
                 f"- {row.get('qid')}: {row.get('question')} | "
                 f"gold={_format_gold_spans(row.get('gold', []))} | "
-                f"top_hits={_format_top_hits_for_md(row.get('top_hit_ids', []))}"
+                f"top_hits={_format_top_hits_for_md(row.get('top_hit_ids', []))} | "
+                f"diag=pre_fused_rank={pre_fused}, pre_pool_rank={pre_pool}, "
+                f"post_rank={post}, delta_pre_pool_to_post={row.get('gold_rank_delta_pre_pool_to_post')}, "
+                f"cause={cause}"
             )
 
     lines.extend(
@@ -350,6 +401,11 @@ def main() -> None:
     parser.add_argument("--no-fusion", action="store_true", help="Disable query fusion in retrieval.")
     parser.add_argument("--no-rerank", action="store_true", help="Disable rerank in retrieval.")
     parser.add_argument(
+        "--no-mode-variants",
+        action="store_true",
+        help="Disable mode-aware query-variant templates in retrieval.",
+    )
+    parser.add_argument(
         "--allow-unlabeled",
         action="store_true",
         help="Allow answerable=true questions with empty gold spans (these are skipped in retrieval metrics).",
@@ -367,6 +423,7 @@ def main() -> None:
 
     retrieval_depth = max(args.k, max(metric_ks))
     primary_k = args.k if args.k in metric_ks else max(metric_ks)
+    diagnostic_pre_rerank_depth = max(60, args.rerank_pool, retrieval_depth)
 
     try:
         questions = load_questions(args.dataset, require_labeled=not args.allow_unlabeled)
@@ -377,6 +434,7 @@ def main() -> None:
         ) from exc
     fusion = not args.no_fusion
     rerank = not args.no_rerank
+    mode_variants = not args.no_mode_variants
 
     per_question: List[Dict[str, Any]] = []
     retrieval_rows_by_k: Dict[int, List[Dict[str, float]]] = {k: [] for k in metric_ks}
@@ -392,7 +450,7 @@ def main() -> None:
     answer_errors = 0
 
     for row in questions:
-        hits = retrieve_for_eval(
+        stage_rows = retrieve_for_eval_with_stages(
             query=row["question"],
             mode=args.mode,
             k=retrieval_depth,
@@ -404,13 +462,30 @@ def main() -> None:
             cheap_rerank=rerank,
             rerank_pool=args.rerank_pool,
             debug=args.debug,
+            diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+            enable_mode_variants=mode_variants,
         )
+        hits = stage_rows["hits"]
+        pre_rerank_fused_hits = stage_rows["pre_rerank_fused_hits"]
+        post_rerank_hits = stage_rows["post_rerank_hits"]
+        effective_rerank_pool = int(stage_rows["rerank_pool"])
 
         retrieval_metrics = None
         gold_hit_ranks: List[int] = []
         doc_hit_ranks: List[int] = []
         near_page_hit_ranks: List[int] = []
         has_gold_in_primary_k: bool | None = None
+        gold_first_rank_pre_rerank_fused: int | None = None
+        gold_first_rank_pre_rerank_pool: int | None = None
+        gold_first_rank_post_rerank: int | None = None
+        gold_in_pre_rerank_fused = False
+        gold_in_rerank_pool = False
+        gold_dropped_outside_rerank_pool = False
+        gold_suppressed_by_rerank = False
+        gold_rank_delta_pre_pool_to_post: int | None = None
+        gold_demoted_by_rerank = False
+        gold_not_promoted_enough = False
+        rerank_miss_cause: str | None = None
         top_hit_ids = _top_hit_ids(hits=hits, limit=min(10, retrieval_depth))
 
         if row["answerable"] and row["gold"]:
@@ -447,6 +522,69 @@ def main() -> None:
                     h, g, page_tolerance=args.near_page_tolerance
                 ),
             )
+            gold_first_rank_pre_rerank_fused = _first_gold_rank_or_none(
+                hits=pre_rerank_fused_hits,
+                gold=row["gold"],
+                k=min(diagnostic_pre_rerank_depth, len(pre_rerank_fused_hits)),
+                matcher=hit_matches_gold,
+            )
+            gold_first_rank_pre_rerank_pool = _first_gold_rank_or_none(
+                hits=pre_rerank_fused_hits,
+                gold=row["gold"],
+                k=min(effective_rerank_pool, len(pre_rerank_fused_hits)),
+                matcher=hit_matches_gold,
+            )
+            gold_first_rank_post_rerank = _first_gold_rank_or_none(
+                hits=post_rerank_hits,
+                gold=row["gold"],
+                k=len(post_rerank_hits),
+                matcher=hit_matches_gold,
+            )
+            gold_in_pre_rerank_fused = gold_first_rank_pre_rerank_fused is not None
+            gold_in_rerank_pool = gold_first_rank_pre_rerank_pool is not None
+            gold_dropped_outside_rerank_pool = (
+                gold_in_pre_rerank_fused and not gold_in_rerank_pool
+            )
+            gold_suppressed_by_rerank = (
+                gold_in_rerank_pool
+                and (
+                    gold_first_rank_post_rerank is None
+                    or int(gold_first_rank_post_rerank) > int(primary_k)
+                )
+            )
+            if (
+                gold_first_rank_pre_rerank_pool is not None
+                and gold_first_rank_post_rerank is not None
+            ):
+                gold_rank_delta_pre_pool_to_post = int(gold_first_rank_post_rerank) - int(
+                    gold_first_rank_pre_rerank_pool
+                )
+            gold_demoted_by_rerank = (
+                gold_in_rerank_pool
+                and gold_first_rank_pre_rerank_pool is not None
+                and (
+                    gold_first_rank_post_rerank is None
+                    or int(gold_first_rank_post_rerank) > int(gold_first_rank_pre_rerank_pool)
+                )
+            )
+            gold_not_promoted_enough = (
+                gold_in_rerank_pool
+                and gold_first_rank_pre_rerank_pool is not None
+                and int(gold_first_rank_pre_rerank_pool) > int(primary_k)
+                and (
+                    gold_first_rank_post_rerank is None
+                    or int(gold_first_rank_post_rerank) > int(primary_k)
+                )
+                and not gold_demoted_by_rerank
+            )
+            rerank_miss_cause = _classify_rerank_miss_cause(
+                gold_in_pre_rerank_fused=gold_in_pre_rerank_fused,
+                gold_in_rerank_pool=gold_in_rerank_pool,
+                gold_first_rank_pre_rerank_pool=gold_first_rank_pre_rerank_pool,
+                gold_first_rank_post_rerank=gold_first_rank_post_rerank,
+                gold_demoted_by_rerank=gold_demoted_by_rerank,
+                primary_k=primary_k,
+            )
             strict_rank_lists.append(gold_hit_ranks)
             doc_only_rank_lists.append(doc_hit_ranks)
             near_page_rank_lists.append(near_page_hit_ranks)
@@ -462,6 +600,17 @@ def main() -> None:
                         "gold": row["gold"],
                         "gold_hit_ranks": gold_hit_ranks,
                         "top_hit_ids": top_hit_ids,
+                        "gold_first_rank_pre_rerank_fused": gold_first_rank_pre_rerank_fused,
+                        "gold_first_rank_pre_rerank_pool": gold_first_rank_pre_rerank_pool,
+                        "gold_first_rank_post_rerank": gold_first_rank_post_rerank,
+                        "gold_in_pre_rerank_fused": gold_in_pre_rerank_fused,
+                        "gold_in_rerank_pool": gold_in_rerank_pool,
+                        "gold_dropped_outside_rerank_pool": gold_dropped_outside_rerank_pool,
+                        "gold_suppressed_by_rerank": gold_suppressed_by_rerank,
+                        "gold_rank_delta_pre_pool_to_post": gold_rank_delta_pre_pool_to_post,
+                        "gold_demoted_by_rerank": gold_demoted_by_rerank,
+                        "gold_not_promoted_enough": gold_not_promoted_enough,
+                        "rerank_miss_cause": rerank_miss_cause,
                     }
                 )
         elif not row["answerable"]:
@@ -480,6 +629,19 @@ def main() -> None:
                 "doc_hit_ranks": doc_hit_ranks,
                 "near_page_hit_ranks": near_page_hit_ranks,
                 "has_gold_in_primary_k": has_gold_in_primary_k,
+                "gold_first_rank_pre_rerank_fused": gold_first_rank_pre_rerank_fused,
+                "gold_first_rank_pre_rerank_pool": gold_first_rank_pre_rerank_pool,
+                "gold_first_rank_post_rerank": gold_first_rank_post_rerank,
+                "gold_in_pre_rerank_fused": gold_in_pre_rerank_fused,
+                "gold_in_rerank_pool": gold_in_rerank_pool,
+                "gold_dropped_outside_rerank_pool": gold_dropped_outside_rerank_pool,
+                "gold_suppressed_by_rerank": gold_suppressed_by_rerank,
+                "gold_rank_delta_pre_pool_to_post": gold_rank_delta_pre_pool_to_post,
+                "gold_demoted_by_rerank": gold_demoted_by_rerank,
+                "gold_not_promoted_enough": gold_not_promoted_enough,
+                "rerank_miss_cause": rerank_miss_cause,
+                "diagnostic_pre_rerank_depth": diagnostic_pre_rerank_depth,
+                "rerank_pool": effective_rerank_pool,
                 "top_hit_ids": top_hit_ids,
                 "hits": hits,
             },
@@ -542,6 +704,12 @@ def main() -> None:
         questions_with_gold_in_primary_k_qids,
         key=qid_sort_key,
     )
+    rerank_miss_cause_counts: Dict[str, int] = {}
+    for row in questions_without_gold_in_primary_k:
+        cause = str(row.get("rerank_miss_cause", "") or "")
+        if not cause:
+            continue
+        rerank_miss_cause_counts[cause] = rerank_miss_cause_counts.get(cause, 0) + 1
 
     primary_secondary = secondary_hit_rate_at_k.get(
         f"k{primary_k}",
@@ -568,8 +736,11 @@ def main() -> None:
         "questions_without_gold_in_primary_k": questions_without_gold_in_primary_k,
         "secondary_diagnostics": {
             "near_page_tolerance": args.near_page_tolerance,
+            "diagnostic_pre_rerank_depth": diagnostic_pre_rerank_depth,
+            "rerank_pool": args.rerank_pool,
             "primary_k_hit_rate": primary_secondary,
             "hit_rate_at_k": secondary_hit_rate_at_k,
+            "miss_cause_counts": dict(sorted(rerank_miss_cause_counts.items(), key=lambda kv: kv[0])),
         },
     }
 
@@ -606,11 +777,13 @@ def main() -> None:
             "k": args.k,
             "ks": metric_ks,
             "retrieval_depth": retrieval_depth,
+            "diagnostic_pre_rerank_depth": diagnostic_pre_rerank_depth,
             "near_page_tolerance": args.near_page_tolerance,
             "k0": args.k0,
             "candidate_multiplier": args.candidate_multiplier,
             "fusion": fusion,
             "rerank": rerank,
+            "mode_variants": mode_variants,
             "rerank_pool": args.rerank_pool,
             "with_answers": args.with_answers,
             "allow_unlabeled": args.allow_unlabeled,

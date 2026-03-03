@@ -16,7 +16,7 @@ def test_query_variants_domain_rules():
     generate relevant query variants for technical terms.
     """
     q = "Algorithm 19 key generation for ML-KEM.KeyGen and K-PKE.KeyGen"
-    variants = query_variants(q)
+    variants = query_variants(q, max_variants=6)
 
     assert variants[0] == q
     assert "ML-KEM.KeyGen K-PKE.KeyGen" in variants
@@ -30,16 +30,16 @@ def test_query_variants_generalized_rules():
     Tests that more general rules (e.g., 'signing' -> '.Sign', 'keygen' -> '.KeyGen')
     are correctly applied across different algorithm families.
     """
-    v1 = query_variants("ML-DSA signing process")
+    v1 = query_variants("ML-DSA signing process", max_variants=6)
     assert "ML-DSA.Sign" in v1
 
-    v2 = query_variants("How to verify in ML-DSA")
+    v2 = query_variants("How to verify in ML-DSA", max_variants=6)
     assert "ML-DSA.Verify" in v2
 
-    v3 = query_variants("SLH-DSA keygen details")
+    v3 = query_variants("SLH-DSA keygen details", max_variants=6)
     assert "SLH-DSA.KeyGen" in v3
 
-    v4 = query_variants("ML-KEM decapsulation steps")
+    v4 = query_variants("ML-KEM decapsulation steps", max_variants=6)
     assert "ML-KEM.Decaps" in v4
 
 
@@ -53,3 +53,22 @@ def test_query_variants_empty_and_dedup():
     q = "ML-KEM.KeyGen"
     variants = query_variants(q)
     assert variants == ["ML-KEM.KeyGen"]
+
+
+def test_query_variants_mode_aware_templates_and_cap():
+    variants = query_variants("What does MLWE mean?", mode_hint="definition", max_variants=4)
+    assert variants[0] == "What does MLWE mean?"
+    assert "definition of MLWE" in variants
+    assert "MLWE stands for" in variants
+    assert len(variants) <= 4
+
+
+def test_query_variants_compare_templates():
+    variants = query_variants(
+        "Compare ML-KEM and ML-DSA",
+        mode_hint="compare",
+        max_variants=4,
+    )
+    assert variants[0] == "Compare ML-KEM and ML-DSA"
+    assert "ML-KEM intended use-cases" in variants
+    assert "ML-DSA intended use-cases" in variants

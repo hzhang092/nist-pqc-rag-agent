@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from eval.run import _build_artifact_paths, _build_run_id, _build_summary_markdown, _has_hit_in_top_k
+from eval.run import (
+    _build_artifact_paths,
+    _build_run_id,
+    _build_summary_markdown,
+    _classify_rerank_miss_cause,
+    _has_hit_in_top_k,
+)
 
 
 def test_build_run_id_uses_dataset_stem_and_utc_timestamp():
@@ -84,3 +90,46 @@ def test_summary_markdown_includes_missing_gold_section():
     md = _build_summary_markdown(summary)
     assert "### Questions Missing Gold In Top-k" in md
     assert "q001: What is ML-KEM?" in md
+
+
+def test_classify_rerank_miss_cause_paths():
+    assert _classify_rerank_miss_cause(
+        gold_in_pre_rerank_fused=False,
+        gold_in_rerank_pool=False,
+        gold_first_rank_pre_rerank_pool=None,
+        gold_first_rank_post_rerank=None,
+        gold_demoted_by_rerank=False,
+        primary_k=8,
+    ) == "upstream_missing"
+    assert _classify_rerank_miss_cause(
+        gold_in_pre_rerank_fused=True,
+        gold_in_rerank_pool=False,
+        gold_first_rank_pre_rerank_pool=None,
+        gold_first_rank_post_rerank=None,
+        gold_demoted_by_rerank=False,
+        primary_k=8,
+    ) == "outside_pool"
+    assert _classify_rerank_miss_cause(
+        gold_in_pre_rerank_fused=True,
+        gold_in_rerank_pool=True,
+        gold_first_rank_pre_rerank_pool=5,
+        gold_first_rank_post_rerank=None,
+        gold_demoted_by_rerank=True,
+        primary_k=8,
+    ) == "rerank_demotion"
+    assert _classify_rerank_miss_cause(
+        gold_in_pre_rerank_fused=True,
+        gold_in_rerank_pool=True,
+        gold_first_rank_pre_rerank_pool=7,
+        gold_first_rank_post_rerank=7,
+        gold_demoted_by_rerank=False,
+        primary_k=8,
+    ) == "retained_or_recovered"
+    assert _classify_rerank_miss_cause(
+        gold_in_pre_rerank_fused=True,
+        gold_in_rerank_pool=True,
+        gold_first_rank_pre_rerank_pool=12,
+        gold_first_rank_post_rerank=12,
+        gold_demoted_by_rerank=False,
+        primary_k=8,
+    ) == "rerank_insufficient_promotion"

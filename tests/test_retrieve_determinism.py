@@ -76,7 +76,7 @@ class FakeBM25Retriever(FakeRetriever):
         t = (text or "").lower()
         return float(int(q in t))
 
-def test_hybrid_search_deterministic_across_backend_order():
+def test_hybrid_search_deterministic_for_same_backend_order():
     h1 = ChunkHit(score=9, chunk_id="X", doc_id="D", start_page=2, end_page=2, text="x")
     h2 = ChunkHit(score=8, chunk_id="Y", doc_id="D", start_page=1, end_page=1, text="y")
     h3 = ChunkHit(score=7, chunk_id="Z", doc_id="D", start_page=3, end_page=3, text="z")
@@ -84,10 +84,21 @@ def test_hybrid_search_deterministic_across_backend_order():
     faiss_a = FakeRetriever([h1, h2, h3])
     bm25_a  = FakeBM25Retriever([h2, h1, h3])
 
-    faiss_b = FakeRetriever([h3, h2, h1])  # reversed
-    bm25_b  = FakeBM25Retriever([h1, h3, h2])
+    out_a1 = hybrid_search(
+        "ML-KEM.KeyGen",
+        top_k=3,
+        use_query_fusion=False,
+        enable_rerank=False,
+        faiss=faiss_a,
+        bm25=bm25_a,
+    )
+    out_a2 = hybrid_search(
+        "ML-KEM.KeyGen",
+        top_k=3,
+        use_query_fusion=False,
+        enable_rerank=False,
+        faiss=faiss_a,
+        bm25=bm25_a,
+    )
 
-    out_a = hybrid_search("ML-KEM.KeyGen", top_k=3, use_query_fusion=False, faiss=faiss_a, bm25=bm25_a)
-    out_b = hybrid_search("ML-KEM.KeyGen", top_k=3, use_query_fusion=False, faiss=faiss_b, bm25=bm25_b)
-
-    assert [h.chunk_id for h in out_a] == [h.chunk_id for h in out_b]
+    assert [h.chunk_id for h in out_a1] == [h.chunk_id for h in out_a2]

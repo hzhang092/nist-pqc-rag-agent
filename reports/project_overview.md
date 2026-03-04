@@ -8,11 +8,19 @@ The project is intentionally scoped to align with common “AI agent / RAG / ret
 
 ### Week-1 goal: a compact, recruiter-legible “mini production system”:
 
-- deterministic ingestion + chunking (standards PDFs are picky),
+- deterministic ingestion + chunking (Docling-first parsing for standards PDFs),
 - hybrid retrieval + query fusion (high ROI),
 - strict citation policy (“no claim without evidence”),
 - a bounded LangGraph agent controller (no runaway loops),
 - eval suite + baseline + one measured improvement.
+
+### Week-2 goal: measured retrieval recovery + interview-ready packaging
+
+- improve retrieval localization for standards-style questions (algorithms/tables/sections),
+- strengthen bounded agent behavior (query analysis, evidence assessment, explicit refusal reasons),
+- produce ablation-backed eval deltas (strict/near-page recall and citation compliance),
+- package a local/on-prem demo path (local LLM option + FastAPI + Docker runbook),
+- harden Docling-based structure extraction (headings/tables/algorithms) without breaking deterministic contracts.
 
 ## Core user stories
 
@@ -49,7 +57,7 @@ Optional (kept separate until after Week-1):
 
 ## System architecture (high-level)
 
-Pipeline: PDFs → page text → cleaned pages → structured chunks → indexes → retrieval (hybrid + fusion + optional rerank) → generation (citation-first) → evaluation
+Pipeline: PDFs → Docling extraction → page text → cleaned pages → structured chunks → indexes → retrieval (hybrid + fusion + optional rerank) → generation (citation-first) → evaluation
 
 ### LangChain/LangGraph role:
 
@@ -72,6 +80,7 @@ Crucially: ingestion, chunking, and evaluation remain framework-independent (cle
 
 - Input: raw_pdf/*.pdf
 - Output: data/processed/pages.jsonl
+- Parsing: Docling as default parser backend (PDF structure-aware extraction)
 
 Guarantees:
 
@@ -79,6 +88,7 @@ Guarantees:
 - deterministic ordering
 - sanity-check PDF page count vs extracted pages
 - warnings for empty-page spikes
+- fallback path when Docling extraction fails for specific pages/documents, with warnings (no silent drop)
 
 2) Cleaning
 
@@ -359,6 +369,75 @@ Optional (if time): add pgvector backend via the same Retriever interface (no ag
 - optional Docker + GitHub Actions
 - centralized config knobs
 
+## Week-2 roadmap (next iteration)
+
+Timeline anchor: Week 2 starts on Tuesday, March 3, 2026.
+
+### Scope guardrails (carry forward)
+
+- Keep Week-1 architecture and contracts intact: deterministic ingestion/chunking, hybrid retrieval + fusion, citation-first generation, bounded LangGraph control loop, eval-driven iteration.
+- Keep optional PDFs in `raw_pdf_optional/` out of default eval scope unless explicitly promoted.
+- Do not claim improvement without eval deltas.
+- Preserve stable JSONL artifacts and page-level citations (`doc_id`, `start_page`, `end_page`) in all retrieval/generation paths.
+
+### Week-2 demo deliverables
+
+1) Retrieval uplift report with ablations and measurable deltas.
+2) Bounded agent trace that shows retrieve -> assess -> optional refine/retrieve -> answer/refuse.
+3) Local serving path for end-to-end RAG (`rag.ask` and API) with reproducible run instructions.
+
+### Day-by-day execution plan
+
+Day 1 - structure-aware chunking upgrade
+
+- Add chunk metadata (`section_path`, `block_type`) and keep deterministic ordering/IDs.
+- Use Docling structural signals (headings/tables/algorithm-like blocks) as primary split hints.
+- Implement recursive split strategy: heading/block-aware first, token-window fallback (target ~250-400 tokens with overlap).
+- Add breadcrumb context (`Document > Section path`) into embedding text without changing citation fields.
+- Acceptance: deterministic chunks across runs; tests assert metadata and stable page spans.
+
+Day 2 - deterministic query expansion and mode hints
+
+- Add domain keyword map (`concept -> canonical tokens`) for identifier-heavy queries.
+- Extend query fusion with operation/anchor expansions (Algorithm/Table/Section patterns) under deterministic limits.
+- Add `mode_hint` classification (`definition`, `algorithm_table`, `compare`, `drafting`) to bias retrieval variant generation.
+- Acceptance: deterministic variant generation tests pass and variant count stays bounded.
+
+Day 3 - bounded graph query-analysis and evidence aggregation
+
+- Add an `analyze_query` graph node with strict structured outputs: `canonical_query`, `mode_hint`, `required_anchors`, optional filters.
+- Aggregate retrieved hits into evidence packets (group by `(doc_id, section_path)` and expand local neighbors when useful).
+- Keep explicit step/tool-call budgets and stop rules.
+- Acceptance: graph traces show bounded loop behavior and updated graph tests pass.
+
+Day 4 - calibrated refusal gate and citation repair
+
+- In `assess_evidence`, score intent-aware signals: hit count, anchor coverage, compare-query diversity, and confidence/margin proxies.
+- Replace raw global thresholding with intent-aware refusal calibration.
+- Add deterministic citation-repair fallback: if generation has no citations, return short extractive cited answer or explicit refusal.
+- Acceptance: fewer false refusals on answerable eval items, with explicit refusal reasons logged.
+
+Day 5 - local LLM serving path
+
+- Add one local serving backend path (vLLM or llama.cpp), with Ollama as optional adapter for demo ergonomics.
+- Keep retriever and evaluation code unchanged while swapping generation endpoint.
+- Record retrieval/rerank/generation latency counters.
+- Acceptance: end-to-end `rag.ask` works with local model and reproducible instructions.
+
+Day 6 - ablation report and config selection
+
+- Run 4-8 config ablations: baseline, +chunking, +keyword map, +evidence packets, +optional rerank.
+- Report Recall@k, MRR, nDCG, strict/near-page overlap, and citation compliance.
+- Publish dated report artifact under `reports/eval/<date>/ablation.md`.
+- Acceptance: select best config by strict/near-page recall with nDCG guardrail.
+
+Day 7 - service surface and Docker packaging
+
+- Expose `/ask` and `/search` via FastAPI with answer, citations, and trace summary.
+- Optional lightweight demo UI (Streamlit/Gradio).
+- Dockerize service (and local model dependency when applicable) with one-command runbook.
+- Acceptance: reproducible demo from prompt to cited answer/refusal.
+
 ## Configuration knobs (centralized)
 
 In rag/config.py:
@@ -369,7 +448,7 @@ In rag/config.py:
 - VECTOR_BACKEND ("faiss" now; later "pgvector" or "chroma")
 - BM25 on/off
 - reranker on/off
-- parsing backend
+- PARSER_BACKEND (`docling` default; fallback parser configurable)
 - paths (raw_pdf, data/processed)
 
 ## Engineering guidelines

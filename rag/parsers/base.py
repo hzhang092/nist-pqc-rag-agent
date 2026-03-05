@@ -29,6 +29,8 @@ import re
 from pathlib import Path
 from typing import Protocol, TypedDict
 
+from rag.text_normalize import normalize_identifier_like_spans
+
 
 class ParsedPage(TypedDict, total=False):
     doc_id: str
@@ -52,7 +54,7 @@ class ParserBackend(Protocol):
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 _MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*")
 _MD_CODE_FENCE_RE = re.compile(r"^\s*```")
-_MD_EMPH_RE = re.compile(r"(\*\*|\*|__|_)")
+_MD_EMPH_RE = re.compile(r"(\*\*|\*)")
 _MD_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -68,6 +70,7 @@ def markdown_to_text(markdown: str) -> str:
         ln = ln.replace("`", "")
         ln = _MD_EMPH_RE.sub("", ln)
         ln = _MD_HTML_TAG_RE.sub("", ln)
+        ln = normalize_identifier_like_spans(ln)
         lines.append(ln.rstrip())
 
     out: list[str] = []

@@ -46,6 +46,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List
 
+from rag.text_normalize import normalize_identifier_like_spans
 from rag.versioning import update_manifest
 
 
@@ -387,6 +388,7 @@ def _approx_token_count(text: str) -> int:
 def _clean_inline_markdown(text: str) -> str:
     s = _MD_LINK_RE.sub(r"\1", text)
     s = s.replace("**", "").replace("__", "").replace("`", "")
+    s = normalize_identifier_like_spans(s)
     return s.strip()
 
 

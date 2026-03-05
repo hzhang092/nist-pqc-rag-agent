@@ -97,6 +97,14 @@ class Settings:
     functions, providing a single source of truth for configuration.
     """
     # --- Retrieval backend (swappable) ---
+    # Parser backend for ingestion.
+    PARSER_BACKEND: str = _env_str("PARSER_BACKEND", "docling") # Options: "llamaparse", "docling"
+    # If True, fail ingestion when parsed-page count mismatches true PDF pages.
+    PARSER_STRICT_PAGE_MATCH: bool = _env_bool("PARSER_STRICT_PAGE_MATCH", True)
+    # Chunking strategy version.
+    CHUNKER_VERSION: str = _env_str("CHUNKER_VERSION", "v2") # Options: "v1", "v2"
+
+    # --- Retrieval backend (swappable) ---
     # Specifies which vector search backend to use (e.g., 'faiss', 'pgvector').
     VECTOR_BACKEND: str = _env_str("VECTOR_BACKEND", "faiss")
     # The default number of top results to retrieve from the vector store.
@@ -164,6 +172,18 @@ def validate_settings() -> None:
     Raises:
         ValueError: If any of the settings have invalid or inconsistent values.
     """
+    allowed_parsers = {"llamaparse", "docling"}
+    if SETTINGS.PARSER_BACKEND not in allowed_parsers:
+        raise ValueError(
+            f"PARSER_BACKEND must be one of {sorted(allowed_parsers)}, "
+            f"got {SETTINGS.PARSER_BACKEND!r}"
+        )
+    allowed_chunkers = {"v1", "v2"}
+    if SETTINGS.CHUNKER_VERSION not in allowed_chunkers:
+        raise ValueError(
+            f"CHUNKER_VERSION must be one of {sorted(allowed_chunkers)}, "
+            f"got {SETTINGS.CHUNKER_VERSION!r}"
+        )
     allowed_backends = {"faiss", "bm25", "pgvector", "chroma"}
     if SETTINGS.VECTOR_BACKEND not in allowed_backends:
         raise ValueError(

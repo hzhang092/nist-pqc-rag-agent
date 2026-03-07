@@ -20,6 +20,11 @@ The key steps are:
 
 This script is a crucial part of the ingestion pipeline, preparing the data for
 efficient similarity search by a vector index.
+
+How to Run:
+- Ensure you have the required dependencies installed, including `sentence-transformers`.
+- Run the script in an environment where the `chunks.jsonl` file is available at
+  `data/processed/chunks.jsonl`.
 """
 # rag/embed.py
 from __future__ import annotations
@@ -28,6 +33,8 @@ import json
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
+
+from rag.versioning import update_manifest
 
 try:
     import orjson
@@ -59,6 +66,19 @@ STORE_JSONL = OUT_DIR / "chunk_store.jsonl"
 META_JSON = OUT_DIR / "emb_meta.json"
 
 
+def build_embedding_text(chunk: dict) -> str:
+    """Builds embedding text with optional breadcrumb context."""
+    text = str(chunk.get("text", "") or "").strip()
+    if not text:
+        return ""
+
+    doc_id = str(chunk.get("doc_id", "") or "").strip()
+    section_path = str(chunk.get("section_path", "") or "").strip()
+    if doc_id and section_path:
+        return f"{doc_id} > {section_path}\n\n{text}"
+    return text
+
+
 def build_store_records(chunks: list[dict]) -> tuple[list[str], list[dict]]:
     """Builds (texts, store_records) with vector_id aligned to embedding row index.
 
@@ -75,11 +95,15 @@ def build_store_records(chunks: list[dict]) -> tuple[list[str], list[dict]]:
 
     vector_id = 0
     for ch in chunks:
-        text = str(ch.get("text", "")).strip()
+        text = str(ch.get("text", "") or "").strip()
         if not text:
             continue
 
-        texts.append(text)
+        embedding_text = build_embedding_text(ch)
+        if not embedding_text:
+            continue
+
+        texts.append(embedding_text)
         store_records.append(
             {
                 "vector_id": vector_id,
@@ -90,6 +114,8 @@ def build_store_records(chunks: list[dict]) -> tuple[list[str], list[dict]]:
                 "page_number": ch.get("page_number"),
                 "char_len": ch.get("char_len"),
                 "approx_tokens": ch.get("approx_tokens"),
+                "section_path": ch.get("section_path"),
+                "chunker_version": ch.get("chunker_version"),
                 "text": text,
             }
         )
@@ -165,11 +191,24 @@ def main():
         "num_vectors": int(embs.shape[0]),
         "dim": int(embs.shape[1]),
         "normalized": True,
+        "embedding_text_breadcrumb": True,
         "chunks_path": str(CHUNKS_PATH),
         "embeddings_path": str(EMB_NPY),
         "store_path": str(STORE_JSONL),
     }
     META_JSON.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    update_manifest(
+        stage_name="embed",
+        stage_payload={
+            "model_name": MODEL_NAME,
+            "num_vectors": int(embs.shape[0]),
+            "dim": int(embs.shape[1]),
+            "normalized": True,
+            "embedding_text_breadcrumb": True,
+        },
+        artifact_paths=[EMB_NPY, STORE_JSONL, META_JSON],
+    )
 
     print(f"[OK] embeddings: {EMB_NPY}  shape={embs.shape}")
     print(f"[OK] store:      {STORE_JSONL}")

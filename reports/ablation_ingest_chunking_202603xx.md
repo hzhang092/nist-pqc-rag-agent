@@ -24,8 +24,8 @@
 - E: `docling + v2` (P0 diagnostics + identifier-normalization + eval-order fix): `reports/eval/questions_20260303T165754Z_summary.md`
 - F: `docling + v2` + intent-aware do-no-harm rerank + `--no-mode-variants`: `reports/eval/questions_20260303T173852Z_summary.md`
 - G: `docling + v2` + intent-aware do-no-harm rerank + mode-aware variants: `reports/eval/questions_20260303T173944Z_summary.md`
+- H: F in wsl2 + prose-spacing fix for identifier normalization:  `questions_20260307T165242Z_summary.md`
 
-## Results
 | config | recall@8 | mrr@8 | ndcg@8 | recovery_gate | stretch_gate | do_no_harm | notes |
 |---|---:|---:|---:|---|---|---|---|
 | A | 0.5476 | 0.3968 | 0.4286 | pass | fail | n/a | baseline reference |
@@ -35,6 +35,7 @@
 | E | 0.5000 | 0.3829 | 0.3955 | fail | fail | fail | P0 improvement, still below parity |
 | F | 0.6548 | 0.3755 | 0.4334 | pass | ndcg fail | pass | best recovery run; q019/q023 recovered |
 | G | 0.6429 | 0.3473 | 0.4113 | ndcg fail | fail | fail | variants introduced new demotion (q009) |
+| H | 0.6548 | 0.3529 | 0.4147 | pass | pass | pass | results for K < 8 is lower than F |
 
 ## Stage Diagnostics
 

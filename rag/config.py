@@ -144,6 +144,16 @@ class Settings:
     # Whether to output the answer in JSON format by default.
     ASK_JSON_DEFAULT: bool = _env_bool("ASK_JSON_DEFAULT", False)
 
+    # --- LLM backend selection ---
+    # Generation backend used by ask/service layers. gemini or ollama (local/OpenAI-compatible).
+    LLM_BACKEND: str = _env_str("LLM_BACKEND", "ollama")
+    # Backend-specific model override (for example qwen3:8B or gemini-2.5-flash).
+    LLM_MODEL: str = _env_str("LLM_MODEL", "")
+    # Base URL for local/OpenAI-compatible backends such as Ollama.
+    LLM_BASE_URL: str = _env_str("LLM_BASE_URL", "http://localhost:11434")
+    # Request timeout for model generation calls.
+    LLM_TIMEOUT_S: int = _env_int("LLM_TIMEOUT_S", 120)
+
     # --- Determinism knobs (for LLM calls later) ---
     # The temperature for the LLM, controlling randomness (0.0 is deterministic).
     LLM_TEMPERATURE: float = float(_env_str("LLM_TEMPERATURE", "0.0"))
@@ -212,6 +222,14 @@ def validate_settings() -> None:
         raise ValueError("ASK_MIN_EVIDENCE_HITS must be >= 0")
     if SETTINGS.ASK_NEIGHBOR_WINDOW < 0:
         raise ValueError("ASK_NEIGHBOR_WINDOW must be >= 0")
+    allowed_llm_backends = {"gemini", "ollama"}
+    if SETTINGS.LLM_BACKEND not in allowed_llm_backends:
+        raise ValueError(
+            f"LLM_BACKEND must be one of {sorted(allowed_llm_backends)}, "
+            f"got {SETTINGS.LLM_BACKEND!r}"
+        )
+    if SETTINGS.LLM_TIMEOUT_S <= 0:
+        raise ValueError("LLM_TIMEOUT_S must be > 0")
     if SETTINGS.AGENT_MAX_STEPS <= 0:
         raise ValueError("AGENT_MAX_STEPS must be > 0")
     if SETTINGS.AGENT_MAX_TOOL_CALLS <= 0:

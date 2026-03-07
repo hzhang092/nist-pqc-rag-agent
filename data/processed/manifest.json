@@ -15,8 +15,8 @@
     "pages.jsonl": "5743a931c3b097202a8fbca9219d1bfb310fef7121a6b6e7d294ae0a6d9ae455"
   },
   "config_hash": "248a03f8865ec84fa6490ca47db1d8eaa5335db3f692b1c270fbce8c941a74b7",
-  "generated_at_utc": "2026-03-07T16:45:06.592804+00:00",
-  "git_commit": "0debd29aabc861d9cb9f6457d83a4aecbd795d15",
+  "generated_at_utc": "2026-03-07T17:21:05.548306+00:00",
+  "git_commit": "4179c6ce3eb4802b8387f9b2e823d206f7e4136e",
   "schema_version": 1,
   "stages": {
     "chunk": {

@@ -1,22 +1,22 @@
 {
   "artifact_hashes": {
-    "NIST.FIPS.203_parsed.json": "8b8661b02996f6f8f4ae4a7b777e99b6e11ed1f734eaf5188d993363e945d74f",
-    "NIST.FIPS.204_parsed.json": "07afed9c0f84b130b7e9693ec10fe01bb214ae1ea83b4a78b18e03bc777a205b",
-    "NIST.FIPS.205_parsed.json": "308615ce03dd23f55d330c2992f3432244cbbc58ef830d34908f965766203105",
-    "NIST.IR.8545_parsed.json": "56331082bff776bd65b66eea9aa9dae156c55ceae6ee1fab1f70cacce07ff70f",
-    "NIST.IR.8547.ipd_parsed.json": "b631dbe554d1230dc73d552ac80924def66c0e8cf7aa84ff3c3feadce80a824f",
-    "NIST.SP.800-227_parsed.json": "bcc3990ef3ffe679038e1bb4e1a173944c74e1faf3803efaedd4f8f83acf673c",
-    "bm25.pkl": "ccc5a1c895a56e9a7d353c7c675c9866c2b7cb91a8172f110177a4f7ba7b81eb",
-    "chunk_store.jsonl": "2d411cd9c128131f9677cfba66274ec0da5fa75f36e7e2ed1e56675402318750",
-    "chunks.jsonl": "74dc3e5d9f8cb99829971e10b0467c7284dbe811d0cfac0dbba3d418b0fc7104",
-    "emb_meta.json": "3b303a7bad122eaea7f3337b213a514b955e74393ba6b938b3b9fbd3a7620847",
-    "embeddings.npy": "ce2cfd844b35d7f8d42999df61bfc6ecf49551814c6873219c48d93269f822f3",
-    "faiss.index": "40696b3c5b0be0c7b3d29c91d5bacb5e977f3603bd921377d97d068b92d6d39b",
-    "pages.jsonl": "9c210555bcba3e1d2ae8708c7940202c7b5f3ac1646b62dbe7eab448f515af2b"
+    "NIST.FIPS.203_parsed.json": "944132adae188a293433bee98627441ebfcbe2b6e1d482e6a1bcb1c4a5836fa9",
+    "NIST.FIPS.204_parsed.json": "7b695c9438a3b9150d9b76219a4250536946cf31e1720d6d654c88f5d22d1df8",
+    "NIST.FIPS.205_parsed.json": "c724478275ad55ce7acdd6600cbdf938f4a715a4cbd6b22fa84da691b1e182f8",
+    "NIST.IR.8545_parsed.json": "b46998bb995c07ee61ece8f5ee4881681a18bd94b4e5e3a5f27da4827a43fc38",
+    "NIST.IR.8547.ipd_parsed.json": "9bb1a68595d4b543792e5395e5df5161a9c23998417e63723bff38552b82dc23",
+    "NIST.SP.800-227_parsed.json": "1b97f49b3914700231d309e526412be63fc2a20331391a57ce72275af5e3eac3",
+    "bm25.pkl": "a8cb8237a29b61f954bab1939bc0c8de1db3ac3340c0390c20ea361805e162b6",
+    "chunk_store.jsonl": "71b9674fb057d5bd3318931880d033421a0fd4129ce7e8ad5e07037b4f19a5a8",
+    "chunks.jsonl": "fda6564062b7c40315cafba48c1f69c1e6468567fb32f8f1e8cb5332cdb51701",
+    "emb_meta.json": "b0c035112a46e35c0de19542f0da86fd2b8d2d3355a62cc8b90c5afa9510383f",
+    "embeddings.npy": "e32c6e5fcd559623e3443b772e2ac33bf5f9e0a6461dcd2e1bb16f6584dc43c4",
+    "faiss.index": "d06962838726122ac746c4e50eca277627095022f0129e93bf32519c566289cb",
+    "pages.jsonl": "5743a931c3b097202a8fbca9219d1bfb310fef7121a6b6e7d294ae0a6d9ae455"
   },
   "config_hash": "248a03f8865ec84fa6490ca47db1d8eaa5335db3f692b1c270fbce8c941a74b7",
-  "generated_at_utc": "2026-03-03T03:29:40.690164+00:00",
-  "git_commit": "f0d2ec999251405375d3ddd159c4e39b55be1390",
+  "generated_at_utc": "2026-03-07T16:45:06.592804+00:00",
+  "git_commit": "0debd29aabc861d9cb9f6457d83a4aecbd795d15",
   "schema_version": 1,
   "stages": {
     "chunk": {
@@ -30,28 +30,28 @@
         "v2_overlap_tokens": 64,
         "v2_window_tokens": 320
       },
-      "num_chunks": 816
+      "num_chunks": 823
     },
     "embed": {
       "dim": 768,
       "embedding_text_breadcrumb": true,
       "model_name": "BAAI/bge-base-en-v1.5",
       "normalized": true,
-      "num_vectors": 816
+      "num_vectors": 823
     },
     "index_bm25": {
-      "n_docs": 816,
+      "n_docs": 823,
       "params": {
         "b": 0.75,
         "k1": 1.5
       },
       "tokenizer": "regex_compound_v1",
-      "vocab_size": 6897
+      "vocab_size": 7245
     },
     "index_faiss": {
       "dim": 768,
       "index_type": "IndexFlatIP",
-      "num_vectors": 816
+      "num_vectors": 823
     },
     "ingest": {
       "num_docs": 6,

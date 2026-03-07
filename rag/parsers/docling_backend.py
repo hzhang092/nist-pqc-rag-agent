@@ -209,16 +209,22 @@ class DoclingBackend(ParserBackend):
             return DocumentConverter()
 
         try:
-            # These imports may vary slightly across docling versions; keep guarded.
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions, CodeFormulaVlmOptions
+            from docling.datamodel.pipeline_options import (
+                PdfPipelineOptions, 
+                CodeFormulaVlmOptions,
+                TableFormerMode
+            )
             from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.document_converter import PdfFormatOption
+            from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
 
             pipeline_options = PdfPipelineOptions(
                 do_formula_enrichment=enable_formula,
                 generate_page_images=generate_images,
                 images_scale=images_scale,
+                do_ocr=True,  # Enables text extraction from scanned content/images
+                do_table_structure=True,  # Enables deep table parsing
                 accelerator_options=AcceleratorOptions(
                     device=device,
                     cuda_use_flash_attention2=use_flash_attn2,
@@ -226,19 +232,27 @@ class DoclingBackend(ParserBackend):
                 ),
             )
 
+            # Configure high-accuracy table parsing
+            pipeline_options.table_structure_options.do_cell_matching = True
+            pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+
             # Attach a stronger VLM preset for code/formulas, if available.
             if enable_formula:
                 try:
                     pipeline_options.code_formula_options = CodeFormulaVlmOptions.from_preset(preset)
                 except Exception:
-                    # If preset isn't supported in this version, proceed without it.
                     pass
 
             return DocumentConverter(
-                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(
+                        pipeline_options=pipeline_options,
+                        backend=DoclingParseDocumentBackend  # Forces the advanced layout backend
+                    )
+                }
             )
         except Exception as e:
-            # Fallback: plain converter (still works for many PDFs).
+            # Fallback: plain converter
             print(
                 "[WARN] Docling enrichment pipeline options unavailable; "
                 f"falling back to default converter: {type(e).__name__}: {e}"

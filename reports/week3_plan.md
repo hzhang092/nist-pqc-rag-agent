@@ -1,15 +1,15 @@
-# Week 2 plan (tailored to the Qorsa Machine Learning Engineering role)
+# Week 3 plan (tailored to the Qorsa Machine Learning Engineering role)
 
 ## Why this version is different
 
-The original Week 2 plan was strong on retrieval quality, but the role asks for more than better search. The JD emphasizes AI agents, RAG, NLP/data pipelines, Docker/Kubernetes, secure integration, knowledge graphs, LLM evaluation/fine-tuning familiarity, and production-minded engineering. Within one week, the best strategy is to push this project from a strong retrieval prototype toward a small deployable internal AI system.
+The original Week 3 plan was strong on retrieval quality, but the role asks for more than better search. The JD emphasizes AI agents, RAG, NLP/data pipelines, Docker/Kubernetes, secure integration, knowledge graphs, LLM evaluation/fine-tuning familiarity, and production-minded engineering. Within one week, the best strategy is to push this project from a strong retrieval prototype toward a small deployable internal AI system.
 
 This plan stays aligned with project_overview.md:
 - keep deterministic ingestion -> structure-aware chunking -> hybrid retrieval -> citation-first generation -> bounded LangGraph control
-- do not expand into a full knowledge graph, full MLOps platform, or full LLM fine-tuning pipeline in Week 2
+- do not expand into a full knowledge graph, full MLOps platform, or full LLM fine-tuning pipeline in Week 3
 - prioritize measurable upgrades that improve both hiring signal and demo quality
 
-## Main Week 2 objective
+## Main Week 3 objective
 
 Turn the NIST PQC RAG assistant into a recruiter-legible mini production system that demonstrates:
 - deployable agentic RAG behavior
@@ -37,7 +37,7 @@ Do not attempt a full knowledge graph. Instead, add a lightweight graph-like lay
 
 ### Success criteria
 
-By the end of Week 2, the project should be able to demonstrate:
+By the end of Week 3, the project should be able to demonstrate:
 - a local or on-prem style demo path with one-command startup
 - FastAPI endpoints for asking questions and inspecting retrieved evidence
 - a bounded LangGraph flow with explicit analyze_query -> retrieve -> assess -> optional refine -> answer -> verify/refuse trace
@@ -204,7 +204,7 @@ Work:
   - improve debug output / explainer diagrams
 - keep implementation simple:
   - JSON or lightweight adjacency store first
-  - do not require a full graph database in Week 2
+  - do not require a full graph database in Week 3
 
 Acceptance:
 - one or two retrieval flows demonstrably benefit from this graph-lite structure
@@ -243,7 +243,7 @@ Acceptance:
 - someone can understand the project quickly from the repo
 - the architecture, tradeoffs, and outcomes are easy to communicate in an interview
 
-## What is intentionally not in Week 2
+## What is intentionally not in Week 3
 
 These are valuable, but they are not realistic or highest-ROI within one week:
 - full knowledge graph construction
@@ -264,10 +264,10 @@ These are valuable, but they are not realistic or highest-ROI within one week:
 
 1. Full LLM fine-tuning / embedding-model training
 Why the project will still fall short:
-- Week 2 can improve retrieval and answer quality, but it still will not honestly demonstrate substantial model fine-tuning or embedding training
+- Week 3 can improve retrieval and answer quality, but it still will not honestly demonstrate substantial model fine-tuning or embedding training
 
 How to work toward it:
-- run one small LoRA/QLoRA experiment on a narrowly scoped task after Week 2
+- run one small LoRA/QLoRA experiment on a narrowly scoped task after Week 3
 - or fine-tune a lightweight reranker / embedding model on relevance pairs derived from your eval set
 - document the training data, objective, baseline, and before/after metrics
 - use HuggingFace + PyTorch so the work maps directly to common ML engineering expectations
@@ -277,7 +277,7 @@ Why the project will still fall short:
 - graph-lite structure is useful, but it is not the same as using a true graph database or writing Cypher queries
 
 How to work toward it:
-- export the graph-lite entities/relations into Neo4j after Week 2
+- export the graph-lite entities/relations into Neo4j after Week 3
 - write 5-10 concrete Cypher queries over standards entities
 - add one small demo such as "find all sections mentioning ML-KEM.Decaps and related algorithms"
 - separately add PostgreSQL + pgvector as a persistent retrieval backend to strengthen SQL relevance
@@ -323,4 +323,4 @@ How to work toward it:
 How to talk about this plan in interviews
 
 The story should be:
-"I already had a strong citation-grounded RAG core over technical standards. For Week 2, I prioritized the gaps that mattered most for ML engineering roles: deployment, stronger agent control, answer robustness, measurable ablations, and a lightweight knowledge-organization layer. I intentionally did not overreach into full fine-tuning, full knowledge graphs, or cloud orchestration in one week; instead, I scoped the project into a small deployable AI system with clear next steps toward those skills."
+"I already had a strong citation-grounded RAG core over technical standards. For Week 3, I prioritized the gaps that mattered most for ML engineering roles: deployment, stronger agent control, answer robustness, measurable ablations, and a lightweight knowledge-organization layer. I intentionally did not overreach into full fine-tuning, full knowledge graphs, or cloud orchestration in one week; instead, I scoped the project into a small deployable AI system with clear next steps toward those skills."

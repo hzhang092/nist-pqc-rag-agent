@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
+from ollama import Client
 
 from rag.config import SETTINGS
 
@@ -20,6 +20,7 @@ class OllamaBackend:
         self._base_url = (base_url or SETTINGS.LLM_BASE_URL).rstrip("/")
         self.model_name = (model_name or SETTINGS.LLM_MODEL).strip()
         self._timeout_s = int(timeout_s or SETTINGS.LLM_TIMEOUT_S)
+        self._client = Client(host=self._base_url, timeout=self._timeout_s)
 
     def generate(
         self,
@@ -48,23 +49,18 @@ class OllamaBackend:
         payload.update(kwargs)
 
         try:
-            with httpx.Client(timeout=self._timeout_s) as client:
-                response = client.post(f"{self._base_url}/api/generate", json=payload)
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
+            response = self._client.generate(**payload)
+        except Exception as exc:
             raise RuntimeError(f"Ollama request failed: {exc}") from exc
 
-        data = response.json()
-        text = str(data.get("response", "") or "")
-        if not text and data.get("done") is not True:
+        text = str(response.get("response", "") or "")
+        if not text and response.get("done") is not True:
             raise RuntimeError("Ollama returned an empty response payload.")
         return text
 
     def ping(self) -> bool:
         try:
-            with httpx.Client(timeout=min(self._timeout_s, 5)) as client:
-                response = client.get(f"{self._base_url}/api/tags")
-                response.raise_for_status()
+            self._client.list()
             return True
-        except httpx.HTTPError:
+        except Exception:
             return False

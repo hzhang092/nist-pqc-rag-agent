@@ -1,0 +1,72 @@
+{
+  "artifact_hashes": {
+    "NIST.FIPS.203_parsed.json": "8b8661b02996f6f8f4ae4a7b777e99b6e11ed1f734eaf5188d993363e945d74f",
+    "NIST.FIPS.204_parsed.json": "07afed9c0f84b130b7e9693ec10fe01bb214ae1ea83b4a78b18e03bc777a205b",
+    "NIST.FIPS.205_parsed.json": "308615ce03dd23f55d330c2992f3432244cbbc58ef830d34908f965766203105",
+    "NIST.IR.8545_parsed.json": "56331082bff776bd65b66eea9aa9dae156c55ceae6ee1fab1f70cacce07ff70f",
+    "NIST.IR.8547.ipd_parsed.json": "b631dbe554d1230dc73d552ac80924def66c0e8cf7aa84ff3c3feadce80a824f",
+    "NIST.SP.800-227_parsed.json": "bcc3990ef3ffe679038e1bb4e1a173944c74e1faf3803efaedd4f8f83acf673c",
+    "bm25.pkl": "ccc5a1c895a56e9a7d353c7c675c9866c2b7cb91a8172f110177a4f7ba7b81eb",
+    "chunk_store.jsonl": "2d411cd9c128131f9677cfba66274ec0da5fa75f36e7e2ed1e56675402318750",
+    "chunks.jsonl": "74dc3e5d9f8cb99829971e10b0467c7284dbe811d0cfac0dbba3d418b0fc7104",
+    "emb_meta.json": "3b303a7bad122eaea7f3337b213a514b955e74393ba6b938b3b9fbd3a7620847",
+    "embeddings.npy": "ce2cfd844b35d7f8d42999df61bfc6ecf49551814c6873219c48d93269f822f3",
+    "faiss.index": "40696b3c5b0be0c7b3d29c91d5bacb5e977f3603bd921377d97d068b92d6d39b",
+    "pages.jsonl": "9c210555bcba3e1d2ae8708c7940202c7b5f3ac1646b62dbe7eab448f515af2b"
+  },
+  "config_hash": "248a03f8865ec84fa6490ca47db1d8eaa5335db3f692b1c270fbce8c941a74b7",
+  "generated_at_utc": "2026-03-03T03:29:40.690164+00:00",
+  "git_commit": "f0d2ec999251405375d3ddd159c4e39b55be1390",
+  "schema_version": 1,
+  "stages": {
+    "chunk": {
+      "chunker_version": "v2",
+      "config": {
+        "max_chars": 2200,
+        "min_chars": 250,
+        "overlap_blocks": 1,
+        "target_chars": 1400,
+        "v2_max_block_tokens": 400,
+        "v2_overlap_tokens": 64,
+        "v2_window_tokens": 320
+      },
+      "num_chunks": 816
+    },
+    "embed": {
+      "dim": 768,
+      "embedding_text_breadcrumb": true,
+      "model_name": "BAAI/bge-base-en-v1.5",
+      "normalized": true,
+      "num_vectors": 816
+    },
+    "index_bm25": {
+      "n_docs": 816,
+      "params": {
+        "b": 0.75,
+        "k1": 1.5
+      },
+      "tokenizer": "regex_compound_v1",
+      "vocab_size": 6897
+    },
+    "index_faiss": {
+      "dim": 768,
+      "index_type": "IndexFlatIP",
+      "num_vectors": 816
+    },
+    "ingest": {
+      "num_docs": 6,
+      "parser_backend": "docling",
+      "parser_backend_version": "2.75.0",
+      "per_doc_pages": {
+        "NIST.FIPS.203": 56,
+        "NIST.FIPS.204": 65,
+        "NIST.FIPS.205": 61,
+        "NIST.IR.8545": 34,
+        "NIST.IR.8547.ipd": 29,
+        "NIST.SP.800-227": 64
+      },
+      "strict_page_match": true,
+      "total_pages": 309
+    }
+  }
+}

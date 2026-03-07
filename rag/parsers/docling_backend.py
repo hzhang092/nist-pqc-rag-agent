@@ -80,6 +80,8 @@ _DOCLING_LONG_QUAD_RUN_RE = re.compile(r"(?:\\,\s*)?(?:\\quad\s*(?:\\,\s*)?){6,}
 _DOCLING_LONG_THINSPACE_RUN_RE = re.compile(r"(?:\\,\s*){12,}") # Docling may produce long runs of \, (with optional whitespace) in formulas; these add noise without value, so replace runs of 12 or more with a single space.
 _DOCLING_LONG_BARE_BACKSLASH_RUN_RE = re.compile(r"(?:\\(?:\s|$)){20,}") # Docling may emit very long runs of bare "\" layout tokens; these add noise without value, so replace long runs with a single space.  
 _DOCLING_HAT_ONLY_LINE_RE = re.compile(r"^(?:[\u0302\u02C6]\s*)+$") # Some Docling versions produce lines that are just hat accents (e.g., "̂") due to OCR artifacts; these add noise without value, so drop lines that are only hat characters and whitespace.
+_DOCLING_LONG_ALIGN_LAYOUT_RUN_RE = re.compile(r"(?:(?:\\quad|\\,|&|\\\\)\s*){18,}") # Some parsed math figures become long runs of alignment/layout tokens (e.g., "\quad & \quad & ..."); collapse these to reduce retrieval noise.
+_DOCLING_LAYOUT_TOKEN_RE = re.compile(r"(?:\\quad|&|\\\\)")
 
 
 def _sanitize_docling_markdown(markdown: str) -> str:
@@ -94,6 +96,7 @@ def _sanitize_docling_markdown(markdown: str) -> str:
     s = _DOCLING_LONG_QUAD_RUN_RE.sub(" ", s)
     s = _DOCLING_LONG_THINSPACE_RUN_RE.sub(" ", s)
     s = _DOCLING_LONG_BARE_BACKSLASH_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_ALIGN_LAYOUT_RUN_RE.sub(" ", s)
 
     kept_lines: list[str] = []
     for ln in s.split("\n"):
@@ -101,6 +104,8 @@ def _sanitize_docling_markdown(markdown: str) -> str:
         stripped = line.strip()
         # Drop standalone hat-accent noise lines (e.g., lines that are just "̂").
         if stripped and _DOCLING_HAT_ONLY_LINE_RE.fullmatch(stripped):
+            continue
+        if _looks_like_layout_math_noise_line(stripped):
             continue
         kept_lines.append(line)
 
@@ -118,8 +123,28 @@ def _sanitize_formula_latex(formula: str) -> str:
     s = _DOCLING_LONG_QUAD_RUN_RE.sub(" ", s)
     s = _DOCLING_LONG_THINSPACE_RUN_RE.sub(" ", s)
     s = _DOCLING_LONG_BARE_BACKSLASH_RUN_RE.sub(" ", s)
+    s = _DOCLING_LONG_ALIGN_LAYOUT_RUN_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
+    if _looks_like_layout_math_noise_line(s):
+        return ""
     return s
+
+
+def _looks_like_layout_math_noise_line(line: str) -> bool:
+    """Return True for lines dominated by Docling layout tokens (\\quad, &, \\\\)."""
+    s = str(line or "").strip()
+    if not s:
+        return False
+
+    layout_tokens = _DOCLING_LAYOUT_TOKEN_RE.findall(s)
+    if len(layout_tokens) < 14:
+        return False
+
+    token_count = max(1, len(re.findall(r"\S+", s)))
+    layout_ratio = len(layout_tokens) / token_count
+    compact = re.sub(r"(?:\\quad|\\,|&|\\\\|\s|[{}()])", "", s)
+    alnum_count = sum(ch.isalnum() for ch in compact)
+    return layout_ratio >= 0.45 and alnum_count <= 40
 
 
 class DoclingBackend(ParserBackend):

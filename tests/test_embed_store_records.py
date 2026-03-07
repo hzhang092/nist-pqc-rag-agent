@@ -37,3 +37,19 @@ def test_build_store_records_vector_id_contiguous_and_aligned():
     assert [rec["vector_id"] for rec in store] == [0, 1]
     assert store[0]["chunk_id"] == "c0"
     assert store[1]["chunk_id"] == "c2"
+
+
+def test_build_store_records_breadcrumb_only_affects_embedding_text():
+    chunks = [
+        {
+            "chunk_id": "c0",
+            "doc_id": "DOC",
+            "start_page": 1,
+            "end_page": 1,
+            "section_path": "1 Intro",
+            "text": "Original text body",
+        }
+    ]
+    texts, store = build_store_records(chunks)
+    assert texts == ["DOC > 1 Intro\n\nOriginal text body"]
+    assert store[0]["text"] == "Original text body"

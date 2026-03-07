@@ -5,7 +5,7 @@ from rag.index_bm25 import build_bm25_artifact, tokenize
 
 
 def test_tokenize_preserves_technical_tokens():
-    text = "ML-KEM.KeyGen K-PKE.KeyGen ML-KEM-768 SHAKE128 Algorithm 19"
+    text = "ML-KEM.KeyGen K-PKE.KeyGen ML-KEM-768 SHAKE128 Algorithm 19 MAC\\_Data ML-KEM\\.KeyGen"
     tokens = tokenize(text)
 
     assert "ml-kem.keygen" in tokens
@@ -14,12 +14,15 @@ def test_tokenize_preserves_technical_tokens():
     assert "shake128" in tokens
     assert "algorithm" in tokens
     assert "19" in tokens
+    assert "mac_data" in tokens
 
     assert "ml" in tokens
     assert "kem" in tokens
     assert "keygen" in tokens
     assert "pke" in tokens
     assert "768" in tokens
+    assert "mac" in tokens
+    assert "data" in tokens
 
 
 def test_bm25_artifact_stable_for_same_input(tmp_path: Path):

@@ -7,7 +7,11 @@ import pytest
 
 pytest.importorskip("docling")
 
-from rag.parsers.docling_backend import DoclingBackend, _sanitize_docling_markdown
+from rag.parsers.docling_backend import (
+    DoclingBackend,
+    _sanitize_docling_markdown,
+    _sanitize_formula_latex,
+)
 
 
 def test_docling_parse_pdf_page_failure_falls_back(monkeypatch):
@@ -88,6 +92,24 @@ def test_docling_sanitizer_removes_quad_spam_and_hat_only_lines():
     assert not re.search(r"(?:\\quad\s*){6,}", cleaned)
     assert not re.search(r"(?:\\(?:\s|$)){20,}", cleaned)
     assert all(line.strip() != hat for line in cleaned.splitlines())
+
+
+def test_docling_sanitizer_drops_alignment_layout_math_noise():
+    noisy = (
+        "$$\\quad & \\quad & \\quad & \\quad & \\quad & \\quad & \\quad & \\quad & "
+        "\\quad & \\quad & \\quad & \\quad & \\quad & \\quad & \\quad & \\quad & $$\n"
+        "Fig. 9. Using a KEM for key establishment with unilateral authentication\n"
+    )
+    cleaned = _sanitize_docling_markdown(noisy)
+    assert "Fig. 9." in cleaned
+    assert "\\quad &" not in cleaned
+
+    formula_noisy = (
+        "\\quad & \\quad & \\quad & \\quad & \\quad & \\quad & "
+        "\\quad & \\quad & \\quad & \\quad & \\quad & \\quad & "
+        "\\quad & \\quad & \\quad & \\quad &"
+    )
+    assert _sanitize_formula_latex(formula_noisy) == ""
 
 
 def test_docling_parse_pdf_adaptive_batch_shrinks_on_oom(monkeypatch):

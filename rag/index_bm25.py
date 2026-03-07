@@ -35,6 +35,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List
 
+from rag.text_normalize import normalize_identifier_like_spans
+from rag.versioning import update_manifest
 
 OUT_DIR = Path("data/processed")
 STORE_PATH = OUT_DIR / "chunk_store.jsonl"
@@ -46,7 +48,8 @@ COMPOUND_RE = re.compile(r"^[a-z0-9]+(?:[-._][a-z0-9]+)+$")
 
 def tokenize(text: str) -> List[str]:
     """Tokenizes text while preserving technical compounds like ML-KEM.KeyGen."""
-    lowered = text.lower()
+    normalized = normalize_identifier_like_spans(text or "")
+    lowered = normalized.lower()
     tokens = TOKEN_RE.findall(lowered)
 
     expanded: List[str] = []
@@ -148,6 +151,17 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("wb") as outfile:
         pickle.dump(artifact, outfile, protocol=pickle.HIGHEST_PROTOCOL)
+
+    update_manifest(
+        stage_name="index_bm25",
+        stage_payload={
+            "tokenizer": artifact.get("tokenizer"),
+            "params": artifact.get("params", {}),
+            "n_docs": int(artifact.get("n_docs", 0)),
+            "vocab_size": len(artifact.get("idf", {})),
+        },
+        artifact_paths=[out_path],
+    )
 
     print(
         f"[OK] saved {out_path} docs={artifact['n_docs']} "

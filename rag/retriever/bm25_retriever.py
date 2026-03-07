@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from rag.index_bm25 import tokenize
+from rag.versioning import ensure_manifest_compat
 
 from .base import ChunkHit
 
@@ -44,6 +45,10 @@ class BM25Retriever:
 
         with self.bm25_path.open("rb") as infile:
             artifact = pickle.load(infile)
+        ensure_manifest_compat(
+            processed_dir=self.bm25_path.parent,
+            expected_bm25_tokenizer=str(artifact.get("tokenizer", "") or ""),
+        )
 
         self.k1 = float(artifact["params"]["k1"])
         self.b = float(artifact["params"]["b"])

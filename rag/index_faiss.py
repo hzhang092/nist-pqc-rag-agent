@@ -14,6 +14,12 @@ The key steps are:
     search for the nearest neighbors.
 5.  Add the embeddings to the index.
 6.  Save the populated index to disk, making it available for the search script.
+
+Usage:
+- Ensure you have the required dependencies installed, including `faiss`.
+- Run the script after successfully generating embeddings with `embed.py`. The
+  script expects the embeddings and metadata to be in the `data/processed`
+  directory.
 """
 
 # rag/index_faiss.py (build + save index)
@@ -21,6 +27,8 @@ from pathlib import Path
 import json
 import numpy as np
 import faiss
+
+from rag.versioning import update_manifest
 
 OUT_DIR = Path("data/processed")
 EMB_PATH = OUT_DIR / "embeddings.npy"
@@ -45,6 +53,15 @@ def main():
     index.add(embs)
 
     faiss.write_index(index, str(INDEX_PATH))
+    update_manifest(
+        stage_name="index_faiss",
+        stage_payload={
+            "index_type": "IndexFlatIP",
+            "num_vectors": int(index.ntotal),
+            "dim": dim,
+        },
+        artifact_paths=[INDEX_PATH],
+    )
     print(f"[OK] saved {INDEX_PATH}  vectors={index.ntotal} dim={dim}")
 
 if __name__ == "__main__":

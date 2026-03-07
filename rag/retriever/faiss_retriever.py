@@ -9,6 +9,8 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+from rag.versioning import ensure_manifest_compat
+
 from .base import ChunkHit
 
 class FaissRetriever:
@@ -29,6 +31,11 @@ class FaissRetriever:
         meta = json.loads(self.meta_path.read_text(encoding="utf-8"))
         self.model_name = meta["model_name"]
         self.dim = int(meta["dim"])
+        ensure_manifest_compat(
+            processed_dir=self.out_dir,
+            expected_embed_model=self.model_name,
+            expected_embed_dim=self.dim,
+        )
 
         self.model = SentenceTransformer(self.model_name)
         self.index = faiss.read_index(str(self.index_path))

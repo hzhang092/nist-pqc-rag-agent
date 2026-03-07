@@ -7,6 +7,7 @@ dependencies = [
     "google-genai==1.63.0",
     "langchain-core==1.2.13",
     "langgraph==1.0.8",
+    "docling==2.75.0",
     "llama-parse==0.6.94",
     "nest-asyncio==1.6.0",
     "numpy==2.4.2",
@@ -22,5 +23,5 @@ dev = [
     "pytest==9.0.2",
 ]
 
-[tool.setuptools]
-packages = ["rag"]
+[tool.setuptools.packages.find]
+include = ["rag*"]

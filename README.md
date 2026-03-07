@@ -159,7 +159,36 @@ python scripts/make_chunks.py
 
 Flags:
 - No CLI flags in this script.
-- To change behavior, edit `ChunkConfig(...)` in the file.
+- Chunking strategy is controlled by `CHUNKER_VERSION` (`v1` or `v2`).
+- To change chunk sizes, edit `ChunkConfig(...)` in the file.
+
+---
+
+### `scripts/docling_preflight.py`
+
+Purpose:
+- Runs a one-page Docling conversion against the first PDF in `data/raw_pdfs`.
+- Detects local Docling setup blockers before switching `PARSER_BACKEND=docling`.
+
+Run:
+
+```powershell
+python scripts/docling_preflight.py
+```
+
+---
+
+### `scripts/check_artifacts.py`
+
+Purpose:
+- Compares current settings hash with `data/processed/manifest.json`.
+- Prints whether an index rebuild is needed after config/backend changes.
+
+Run:
+
+```powershell
+python scripts/check_artifacts.py
+```
 
 ---
 
@@ -406,6 +435,12 @@ python -m rag.ask "ML-KEM.Decaps summary" --json --save-json reports/ask_mlkem_d
 ## Environment variable reference
 
 Use environment variables to set project-wide defaults for retrieval and QA CLIs.
+
+### Ingestion and chunking
+
+- `PARSER_BACKEND` (default: `llamaparse`): ingestion parser backend (`llamaparse` or `docling`).
+- `PARSER_STRICT_PAGE_MATCH` (default: `true`): fail ingestion on page-count mismatch.
+- `CHUNKER_VERSION` (default: `v1`): chunking strategy (`v1` legacy, `v2` markdown-aware).
 
 ### Retrieval
 

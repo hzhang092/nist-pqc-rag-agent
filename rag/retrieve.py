@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from time import perf_counter
 from typing import Dict, Iterable, List, Literal, Sequence, TYPE_CHECKING, TypedDict
 
 from rag.config import SETTINGS
@@ -77,6 +78,11 @@ class RetrievalStageOutputs(TypedDict):
     pre_rerank_fused_hits: List[ChunkHit]
     post_rerank_hits: List[ChunkHit]
     rerank_pool: int
+
+
+class RetrievalTimingSummary(TypedDict):
+    retrieve_ms: float
+    rerank_ms: float
 
 
 def _tie_break_key(hit: ChunkHit) -> tuple:
@@ -414,6 +420,7 @@ def _build_hybrid_stage_outputs(
     enable_mode_variants: bool = True,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
+    timing_ms: RetrievalTimingSummary | None = None,
 ) -> RetrievalStageOutputs:
     """Runs hybrid retrieval and returns stage outputs for diagnostics."""
     if top_k <= 0:
@@ -438,6 +445,7 @@ def _build_hybrid_stage_outputs(
 
     bm25_retriever = bm25 or BM25Retriever()
 
+    retrieve_started = perf_counter()
     normalized_query = normalize_identifier_like_spans(query)
     resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
     per_source_k = max(top_k * candidate_multiplier, top_k)
@@ -463,8 +471,11 @@ def _build_hybrid_stage_outputs(
     pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
     pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
     rerank_input = pre_rerank_fused[:fused_pool]
+    retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
 
+    rerank_elapsed_ms = 0.0
     if enable_rerank:
+        rerank_started = perf_counter()
         post_rerank_hits = rerank_fused_hits(
             query=normalized_query,
             hits=rerank_input,
@@ -472,8 +483,13 @@ def _build_hybrid_stage_outputs(
             bm25=bm25_retriever,
             mode_hint=resolved_mode,
         )
+        rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
     else:
         post_rerank_hits = rerank_input
+
+    if timing_ms is not None:
+        timing_ms["retrieve_ms"] = retrieve_elapsed_ms
+        timing_ms["rerank_ms"] = rerank_elapsed_ms
 
     return {
         "final_hits": post_rerank_hits[:top_k],
@@ -526,6 +542,7 @@ def _build_base_stage_outputs(
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
     enable_mode_variants: bool = True,
+    timing_ms: RetrievalTimingSummary | None = None,
 ) -> RetrievalStageOutputs:
     """Runs base retrieval and returns stage outputs for diagnostics."""
     if top_k <= 0:
@@ -537,6 +554,7 @@ def _build_base_stage_outputs(
     if diagnostic_pre_rerank_depth <= 0:
         raise ValueError("diagnostic_pre_rerank_depth must be > 0")
 
+    retrieve_started = perf_counter()
     normalized_query = normalize_identifier_like_spans(query)
     resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
     retriever = get_retriever(backend)
@@ -557,9 +575,12 @@ def _build_base_stage_outputs(
     pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
     pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
     rerank_input = pre_rerank_fused[:fused_pool]
+    retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
 
+    rerank_elapsed_ms = 0.0
     if enable_rerank:
         bm25_retriever = BM25Retriever()
+        rerank_started = perf_counter()
         post_rerank_hits = rerank_fused_hits(
             query=normalized_query,
             hits=rerank_input,
@@ -567,8 +588,13 @@ def _build_base_stage_outputs(
             bm25=bm25_retriever,
             mode_hint=resolved_mode,
         )
+        rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
     else:
         post_rerank_hits = rerank_input
+
+    if timing_ms is not None:
+        timing_ms["retrieve_ms"] = retrieve_elapsed_ms
+        timing_ms["rerank_ms"] = rerank_elapsed_ms
 
     return {
         "final_hits": post_rerank_hits[:top_k],
@@ -693,6 +719,60 @@ def retrieve_with_stages(
             mode_hint=mode_hint,
             enable_mode_variants=enable_mode_variants,
         )
+    raise ValueError(f"Unknown retrieval mode: {mode}")
+
+
+def retrieve_with_stages_and_timing(
+    query: str,
+    k: int = SETTINGS.TOP_K,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    use_query_fusion: bool = SETTINGS.RETRIEVAL_QUERY_FUSION,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    enable_mode_variants: bool = True,
+) -> tuple[RetrievalStageOutputs, RetrievalTimingSummary]:
+    timing_ms: RetrievalTimingSummary = {
+        "retrieve_ms": 0.0,
+        "rerank_ms": 0.0,
+    }
+
+    selected_mode = mode.lower().strip()
+    if selected_mode == "hybrid":
+        outputs = _build_hybrid_stage_outputs(
+            query=query,
+            top_k=k,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
+            timing_ms=timing_ms,
+        )
+        return outputs, timing_ms
+    if selected_mode == "base":
+        outputs = _build_base_stage_outputs(
+            query=query,
+            top_k=k,
+            backend=backend,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            use_query_fusion=use_query_fusion,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
+            mode_hint=mode_hint,
+            enable_mode_variants=enable_mode_variants,
+            timing_ms=timing_ms,
+        )
+        return outputs, timing_ms
     raise ValueError(f"Unknown retrieval mode: {mode}")
 
 

@@ -42,7 +42,7 @@ Usage:
 import argparse
 
 from rag.config import SETTINGS, validate_settings
-from rag.retrieve import retrieve
+from rag.service import search_query
 
 def main():
     """
@@ -83,7 +83,7 @@ def main():
         print('Usage: python -m rag.search "your question"')
         raise SystemExit(1)
 
-    hits = retrieve(
+    payload = search_query(
         query=qtext,
         k=args.k,
         mode=args.mode,
@@ -96,11 +96,14 @@ def main():
     )
 
     print(f"\nQuery: {qtext}\n")
-    for i, h in enumerate(hits, start=1):
-        print(f"[{i}] score={h.score:.4f}  {h.doc_id}  p{h.start_page}-p{h.end_page}  ({h.chunk_id})")
-        if h.text:
-            preview = h.text[:300].replace("\n", " ")
-            print(f"    {preview}...")
+    for i, hit in enumerate(payload["hits"], start=1):
+        print(
+            f"[{i}] score={hit['score']:.4f}  {hit['doc_id']}  "
+            f"p{hit['start_page']}-p{hit['end_page']}  ({hit['chunk_id']})"
+        )
+        preview = hit["preview_text"]
+        if preview:
+            print(f"    {preview}")
         print()
 
 if __name__ == "__main__":

@@ -4,14 +4,13 @@ Command-line interface for the question-answering system.
 This script serves as the main entry point for interacting with the RAG system.
 It orchestrates the entire process:
 1.  Parses command-line arguments for the user's question and other options
-    (e.g., showing evidence, JSON output).
-2.  Initializes the specified retriever backend.
-3.  Performs a search to find relevant document chunks (evidence).
-4.  Optionally displays the retrieved evidence.
-5.  Initializes the language model generation function.
-6.  Calls `build_cited_answer` to generate a validated, citation-grounded answer.
-7.  Formats and prints the final answer and citations to the console in either
-    human-readable or JSON format.
+    (e.g., showing evidence, JSON output, retrieval mode).
+2.  Calls `rag.service.ask_question` which handles:
+    - Retriever backend initialization
+    - Evidence retrieval (with optional hybrid fusion and query expansion)
+    - LLM-based answer generation with citation grounding
+3.  Formats and prints the final answer, citations, and timing to the console
+    in either human-readable or JSON format.
 
 How to use:
     python -m rag.ask "What does FIPS 203 say about ML-KEM key generation?"
@@ -19,7 +18,7 @@ How to use:
     python -m rag.ask "What is Algorithm 19?" --mode hybrid --k 8 --json
     python -m rag.ask "KeyGen details" --mode base --backend bm25 --no-query-fusion
     python -m rag.ask "ML-KEM.Decaps" --candidate-multiplier 6 --k0 55 --rerank-pool 40
-    python -m rag.ask "Algorithm 19" --no-rerank
+    python -m rag.ask "Algorithm 19" --no-rerank --save-json results/answer.json
 
 Flags:
     --show-evidence
@@ -31,31 +30,33 @@ Flags:
     --save-json PATH
         In --json mode, also write the JSON payload to PATH.
     --k
-        Override final number of retrieved hits.
+        Override final number of retrieved hits (default: SETTINGS.TOP_K).
     --backend
-        Override vector backend used by base mode.
+        Override vector backend used by base mode (default: SETTINGS.VECTOR_BACKEND).
     --mode
-        Retrieval mode: "base" (single backend) or "hybrid" (faiss+bm25).
+        Retrieval mode: "base" (single backend) or "hybrid" (faiss+bm25 fusion).
     --no-query-fusion
-        Disable deterministic query variants before retrieval.
+        Disable deterministic query variant expansion before retrieval.
     --k0
-        Reciprocal Rank Fusion constant; controls rank sensitivity.
+        Reciprocal Rank Fusion constant; controls rank sensitivity (default: SETTINGS.RETRIEVAL_RRF_K0).
     --candidate-multiplier
-        Candidate expansion factor before fusion.
+        Candidate expansion factor before fusion (default: SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER).
     --rerank-pool
-        Number of fused candidates considered before rerank truncates to k.
+        Number of fused candidates considered before rerank truncates to k (default: SETTINGS.RETRIEVAL_RERANK_POOL).
     --no-rerank
         Disable lightweight lexical rerank over fused candidates.
 
-Used by:
-    - Direct CLI entrypoint for end-to-end retrieval + generation.
-    - Calls `rag.retrieve.retrieve` for evidence retrieval.
-    - Calls `rag.rag_answer.build_cited_answer` for citation-grounded answer synthesis.
-    - Uses `rag.llm.gemini.make_generate_fn` for model invocation.
+Architecture:
+    - Calls `rag.service.ask_question` for orchestration
+    - Uses `rag.config.SETTINGS` for default configuration
+    - Returns payload with answer, citations, evidence, timing, and trace data
+    - All page-level citations preserved per data contract (doc_id, start_page, end_page)
 
-Usage:
-    python -m rag.ask "Your question here" [--show-evidence] [--json]
+Output format:
+    Human-readable: Formatted answer, citations, and timing
+    JSON: Complete payload including retrieval metadata and optional evidence
 """
+
 # rag/ask.py
 from __future__ import annotations
 
@@ -64,29 +65,17 @@ import json
 from pathlib import Path
 
 from rag.config import SETTINGS, validate_settings
-from rag.llm.gemini import get_model_name, make_generate_fn
-from rag.rag_answer import build_cited_answer
-from rag.retrieve import retrieve
-from rag.types import AnswerResult
+from rag.service import ask_question
 
 
-def _format_citations(result: AnswerResult) -> str:
+def _format_citations(citations: list[dict]) -> str:
     """Formats the list of citations into a human-readable string."""
     lines = []
-    for c in result.citations:
-        lines.append(f"[{c.key}] {c.doc_id} p{c.start_page}-p{c.end_page} chunk_id={c.chunk_id}")
+    for c in citations:
+        lines.append(
+            f"[{c['key']}] {c['doc_id']} p{c['start_page']}-p{c['end_page']} chunk_id={c['chunk_id']}"
+        )
     return "\n".join(lines)
-
-def _hit_to_dict(h) -> dict:
-    # Avoid relying on ChunkHit having a .to_dict() method
-    return {
-        "score": float(h.score),
-        "chunk_id": h.chunk_id,
-        "doc_id": h.doc_id,
-        "start_page": int(h.start_page),
-        "end_page": int(h.end_page),
-        "text": h.text,
-    }
 
 
 def main():
@@ -157,63 +146,63 @@ def main():
 
     backend = args.backend or SETTINGS.VECTOR_BACKEND
     k = args.k or SETTINGS.TOP_K
-    model_name = get_model_name()
-
-    hits = retrieve(
-        query=question,
+    payload = ask_question(
+        question=question,
         k=k,
         mode=args.mode,
-        backend=backend,
+        vector_backend=backend,
         use_query_fusion=not args.no_query_fusion,
         candidate_multiplier=args.candidate_multiplier,
         k0=args.k0,
         enable_rerank=not args.no_rerank,
         rerank_pool=args.rerank_pool,
     )
+    model_name = str(payload["llm_model"])
 
     if args.show_evidence:
-        print(f"\n=== Model ===\n{model_name}")
+        print(f"\n=== Model ===\n{payload['llm_backend']} / {model_name}")
         print("\n=== Evidence (top hits) ===")
-        for i, h in enumerate(hits, start=1):
-            preview = (h.text or "").strip().replace("\n", " ")
-            if len(preview) > 220:
-                preview = preview[:220] + "..."
-            print(f"{i:02d}. score={h.score:.4f} {h.doc_id} p{h.start_page}-p{h.end_page} chunk_id={h.chunk_id}")
-            print(f"    {preview}")
-
-    generate_fn = make_generate_fn()
-    result = build_cited_answer(question=question, hits=hits, generate_fn=generate_fn)
+        for i, h in enumerate(payload["evidence"], start=1):
+            print(
+                f"{i:02d}. score={h['score']:.4f} {h['doc_id']} "
+                f"p{h['start_page']}-p{h['end_page']} chunk_id={h['chunk_id']}"
+            )
+            print(f"    {h['preview_text']}")
 
     if args.as_json:
-        payload = result.to_dict()
-        payload["model"] = model_name
-        payload["question"] = question
-        payload["retrieval"] = {
-            "mode": args.mode,
-            "backend": backend,
-            "k": k,
-            "query_fusion": (not args.no_query_fusion),
-            "candidate_multiplier": args.candidate_multiplier,
-            "k0": args.k0,
-            "rerank": (not args.no_rerank),
-            "rerank_pool": args.rerank_pool,
+        json_payload = {
+            "answer": payload["answer"],
+            "citations": payload["citations"],
+            "refusal_reason": payload["refusal_reason"],
+            "trace_summary": payload["trace_summary"],
+            "timing_ms": payload["timing_ms"],
+            "model": model_name,
+            "llm_backend": payload["llm_backend"],
+            "question": question,
+            "retrieval": payload["retrieval"],
         }
         if not args.no_evidence:
-            payload["evidence"] = [_hit_to_dict(h) for h in hits]
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+            json_payload["evidence"] = payload["evidence"]
+        print(json.dumps(json_payload, ensure_ascii=False, indent=2))
         if args.save_json:
             Path(args.save_json).parent.mkdir(parents=True, exist_ok=True)
-            Path(args.save_json).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            Path(args.save_json).write_text(
+                json.dumps(json_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         return
 
     print("\n=== Answer ===")
-    print(result.answer)
+    print(payload["answer"])
 
     print("\n=== Citations ===")
-    if result.citations:
-        print(_format_citations(result))
+    if payload["citations"]:
+        print(_format_citations(payload["citations"]))
     else:
         print("(none)")
+
+    print("\n=== Timing (ms) ===")
+    print(json.dumps(payload["timing_ms"], ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -1,228 +1,231 @@
-# Week 3 plan — nist-pqc-rag-agent
+# Week 3 plan (revised on 2026-03-08)
 
-## Starting point
+## Why this revision
+This revision keeps the original Week 3 direction but tightens it around the real remaining gaps shown by the current reports:
 
-Week 3 starts from the real Week 2 state, not from an idealized roadmap.
+- Day 1 productization is already the highest-signal gap for the target ML engineering roles (`FastAPI`, `Docker`, `RAG`, `AI agents`, `NLP pipelines`, `knowledge graphs`, secure integration).  
+- Retrieval is now in a better state after the Week 2 recovery work, and the current project overview already says answer reliability is stronger on retrieval than on answer-side recovery.  
+- The compare-citation failure report shows an important answer-side failure mode: evidence can be sufficient while the answer still fails citation requirements. That specific compare bug is fixed, but the broader Week 3 target remains answer-side robustness across more cases.  
+- Since the LangGraph path will gain an `analyze_query` node, direct retrieval heuristics such as automatic mode-hint inference and default query-variant expansion should not also fire blindly inside the graph path.
 
-Completed in Week 2:
-
-- Day 1: parser abstraction, chunking v2, manifest versioning, Docling/chunk-structure hardening
-- Day 2: retrieval diagnostics, identifier normalization, and an intent-aware do-no-harm rerank fix
-
-This means Week 3 should not spend its limited budget repeating chunking work. It should build on the retrieval core and close the biggest remaining ML-engineering gaps.
-
-## Why this plan is shaped this way
-
-The strongest employer-facing gaps now are not “more retrieval tweaks” in isolation. They are:
-
-- deployability and packaging
-- stronger agent/query-analysis behavior
-- answer-side robustness
-- a clean ablation story
-- a scoped knowledge-organization feature
-- explicit security-minded documentation
-
-This plan stays within a one-week constraint and avoids trying to force in a full fine-tuning platform, a full knowledge graph, or a serious Kubernetes deployment.
+This plan stays aligned with `project_overview.md`:
+- keep deterministic ingestion -> structure-aware chunking -> hybrid retrieval -> citation-first generation -> bounded LangGraph control
+- do not expand into a full knowledge graph, full MLOps platform, or full LLM fine-tuning pipeline in Week 3
+- prioritize measurable upgrades that improve both hiring signal and demo quality within one week
 
 ## Main Week 3 objective
 
-Turn the NIST PQC RAG assistant into a small deployable internal AI system that demonstrates:
+Turn the NIST PQC RAG assistant into a recruiter-legible mini production system that demonstrates:
+- deployable agentic RAG behavior
+- stronger query analysis and evidence handling
+- explicit citation-safe answering and refusal behavior
+- measurable before/after retrieval and answer quality
+- a small graph-like organization feature tied to standards documents
 
-- agentic RAG over technical standards documents
-- inspectable and bounded retrieval / answer behavior
-- better answer reliability under citation constraints
-- a local/on-prem style service path
-- one concise proof artifact showing before/after improvement
-- an honest partial story for knowledge organization
+## Priorities for this week
+
+### Priority 1 - Productize the project
+Add a local/on-prem serving path, FastAPI surface, Docker packaging, and a clear runbook. This closes one of the largest gaps versus the job description.
+
+### Priority 2 - Make the agent story stronger
+Upgrade from mostly retrieval-centric behavior to explicit query analysis, graph-visible state, bounded refinement, and an explicit graph-serving path.
+
+### Priority 3 - Make answer-side robustness visible
+Focus Week 3 answer work on the realistic remaining gap: retrieval can be sufficient while the answer still fails citation requirements. Treat the compare-citation fix as evidence for the class of problem, not as the entire problem being finished.
+
+### Priority 4 - Publish measurable proof
+Create a clean ablation story with before/after metrics, not just scattered implementation reports.
+
+### Priority 5 - Add a scoped KG-lite feature
+Do not attempt a full knowledge graph. Instead, add a lightweight graph-like layer over documents, sections, algorithms, and terms so the project can partially demonstrate knowledge organization.
 
 ## Success criteria
 
-By the end of Week 3, the project should be able to show:
+By the end of Week 3, the project should be able to demonstrate:
+- a local or on-prem style demo path with one-command startup
+- FastAPI endpoints for asking questions and inspecting retrieved evidence
+- two explicit serving modes:
+  - `/ask` = stable direct QA path
+  - `/ask-agent` = explicit LangGraph path
+- a bounded LangGraph flow with explicit `analyze_query -> retrieve -> assess -> optional refine -> answer -> verify/refuse` trace
+- stronger citation-safe answering, including deterministic fallback(s) when free-form generation fails citation checks
+- a small ablation report showing concrete retrieval and/or answer-side improvement over baseline
+- a graph-lite navigation feature over standards structure
+- updated README / demo notes that explain architecture, tradeoffs, and remaining gaps honestly
 
-- one-command or near-one-command local startup for a demo path
-- FastAPI endpoints for `/ask`, `/search`, and `/health`
-- a graph trace that clearly shows `analyze_query -> retrieve -> assess -> optional refine -> answer -> verify/refuse`
-- deterministic citation repair or explicit refusal when free-form generation fails citation checks
-- one concise dated ablation report with a chosen best config
-- one graph-lite artifact over standards structure
-- updated README / runbook / architecture notes that are easy to defend in interviews
+## Cross-cutting implementation rule
 
-## Constraints and design rules
+When a request enters through the LangGraph path:
+- disable default retrieval-side automatic `mode_hint` inference
+- disable default retrieval-side query-variant expansion
+- let the `analyze_query` node be the source of:
+  - `canonical_query`
+  - `mode_hint`
+  - `required_anchors`
+  - optional filters / constraints
+  - any bounded query rewrites or expansions
 
-- preserve deterministic contracts and page-level citation metadata
-- do not widen document scope just to look bigger
-- do not claim improvements without fixed-set eval deltas
-- prefer one solid demo path over multiple half-finished integrations
-- keep the work aligned with technical-document characteristics: algorithms, tables, math-like content, and exact identifiers
+Rationale:
+- Week 2 recommended keeping mode-aware query-variant expansion disabled by default unless revalidated.
+- Doubling graph-side query transformation with retrieval-side automatic transformation creates conflicting behavior and makes traces harder to interpret.
+- The graph path should show deliberate agent reasoning; the direct `/ask` path can keep the simpler retrieval heuristics where appropriate.
 
-## Priority order for Week 3
+## Day-by-day plan
 
-### Priority 1 — Productize the project
+### Day 1 - Deployment foundation: local LLM path + FastAPI skeleton
 
-Add a local/on-prem style serving path, FastAPI surface, Docker packaging, and a clear runbook.
-
-### Priority 2 — Make the agent story stronger
-
-Add explicit query analysis, make `mode_hint` truly flow through retrieval, and improve inspectability.
-
-### Priority 3 — Make answer-side robustness visible
-
-Reduce avoidable refusals when evidence is already adequate.
-
-### Priority 4 — Publish measurable proof
-
-Write one clean ablation report instead of leaving improvements scattered across notes.
-
-### Priority 5 — Add a scoped KG-lite feature
-
-Add a lightweight standards-navigation layer rather than attempting a full knowledge graph.
-
-## Day-by-day execution plan
-
-### Day 1 — Deployment foundation: local model path + FastAPI skeleton
-
-Goal:
-
-Make the system look deployable rather than notebook-only.
+Goal:  
+Close the biggest project-to-JD gap first by making the system look deployable rather than notebook-like.
 
 Work:
-
-- add a configurable local model adapter path for one practical serving option
-- prefer one realistic backend only:
-  - `vLLM` if GPU access is actually available
-  - otherwise an OpenAI-compatible local server, Ollama, or `llama.cpp`-style path
-- keep the rest of the RAG pipeline behind a stable model interface
+- add a local model adapter path for one realistic serving option
+  - preferred for one-week scope: local endpoint abstraction that can target OpenAI-compatible local serving
+  - choose one practical backend for demo: vLLM if GPU access is available, otherwise llama.cpp / Ollama style local serving
+- keep the rest of the direct QA pipeline unchanged behind a stable model interface
 - scaffold FastAPI endpoints:
-  - `/ask`
-  - `/search`
-  - `/health`
-- return answer, citations, refusal reason, and trace summary where appropriate
-- log retrieval, rerank, and generation latency separately
+  - `/ask` -> stable direct QA path; returns answer, citations, refusal reason if any, trace summary
+  - `/search` -> returns retrieved chunks and metadata for debugging
+  - `/health` -> sanity check for interview/demo use
+- add timing hooks for retrieval latency, rerank latency, and generation latency
+- optionally reserve routing/service plumbing so `/ask-agent` can be added cleanly on Day 2 without changing the API shape again
 
 Acceptance:
+- the app can answer at least one end-to-end query through FastAPI
+- model backend is configurable without changing pipeline code
+- latency fields are visible in logs or trace output
 
-- at least one end-to-end query works through FastAPI
-- model backend is swappable without changing pipeline logic
-- latency fields are visible in traces or logs
+Why this matters:  
+This directly addresses the role's emphasis on AI systems that integrate into real infrastructure, not just experimental retrieval code.
 
-### Day 2 — Query analysis node + mode-aware retrieval plumbing
+### Day 2 - Query analysis node + explicit graph-serving path
 
-Goal:
-
-Make the LangGraph controller look like a real agent pipeline, not a thin retrieve-and-answer wrapper.
+Goal:  
+Make the LangGraph controller look like a genuine agent pipeline instead of a thin retrieve-and-answer wrapper.
 
 Work:
-
 - add `analyze_query` as the first graph node
-- emit structured fields such as:
+- produce structured outputs such as:
   - `canonical_query`
   - `mode_hint` (`definition | algorithm | compare | general`)
-  - `required_anchors`
-  - optional document-family filters when safe
-- make `mode_hint` actually flow through retrieval APIs rather than being partial or best-effort
-- keep the implementation deterministic:
-  - schema-constrained outputs
-  - bounded variants
-  - stable ordering
-- reuse Week 2 retrieval lessons:
-  - acronym anchors
-  - identifier-safe normalization
-  - algorithm / table / section anchors
+  - `required_anchors` (for example `Algorithm 2`, `ML-KEM.Decaps`, `Section 5.1`)
+  - optional filters (doc_id or document family if inferable)
+- add `/ask-agent` as the explicit LangGraph endpoint
+- wire `/ask-agent` so the graph trace is externally visible through the API response / trace summary
+- make graph-produced `mode_hint` and graph-produced rewrites actually flow through retrieve APIs, rather than being partial or best-effort
+- keep this deterministic: schema-constrained output, temperature 0, bounded outputs
+- for LangGraph-entered requests, disable retrieval-side automatic query variants and automatic mode-hint inference
+- preserve direct `/ask` as the stable control path for comparison
 
 Acceptance:
+- graph trace clearly shows `analyze_query` before retrieval
+- `/ask-agent` returns answer/refusal plus citations and trace summary
+- unit tests verify deterministic structured analysis
+- retrieval changes behavior for algorithm / definition / compare queries in a controlled, traceable way
 
-- traces show query analysis before retrieval
-- tests cover deterministic structured analysis and bounded variants
-- retrieval behavior changes in a controlled way by query mode
+Why this matters:  
+The JD emphasizes AI agents and NLP pipelines. This creates a more credible agent story without sacrificing determinism, while keeping `/ask` as a stable baseline.
 
-### Day 3 — Evidence packets + citation repair
+### Day 3 - Answer-side citation robustness (not “retrieval again”)
 
-Goal:
+Goal:  
+Solve the practical failure mode where retrieval is decent or sufficient, but answer generation still fails citation requirements.
 
-Fix the failure mode where retrieval is decent but the answer still fails citation requirements.
+Important scope note:
+- the comparison-specific citation failure documented in the report is already fixed
+- Day 3 should therefore focus on broadening and hardening the answer-side recovery pattern, not on re-fixing the exact same compare bug
+- evidence packets are still useful only insofar as they support more reliable answer composition and citation-safe fallback
 
 Work:
-
-- group retrieved hits into evidence packets by document, section path, and local neighborhood
-- update `assess_evidence` to reason over packet-level signals instead of only raw hit counts
-- add deterministic citation-repair fallback:
-  - if generation has unsupported claims or zero citations, produce a short extractive / semi-extractive cited answer
-  - otherwise refuse explicitly
-- make refusal reasons explicit and inspectable, for example:
-  - no strong evidence
-  - anchor missing
-  - comparison evidence one-sided
-  - citation generation failed
+- keep raw retrieval ranking defaults stable unless a new eval-backed reason appears
+- add a bounded answer-side citation-repair pass:
+  - if generation returns unsupported claims, malformed citations, or zero citations, run one repair attempt with stricter citation formatting guidance
+- generalize deterministic fallback behavior beyond the exact compare fix where justified:
+  - short extractive / semi-extractive fallback for answerable cases
+  - explicit refusal if evidence is still insufficient
+- standardize citation parsing / enforcement behavior across answer and validation layers
+- record refusal reason categories such as:
+  - `no_strong_evidence`
+  - `anchor_missing`
+  - `comparison_evidence_one_sided`
+  - `citation_generation_failed`
+  - `citation_validation_failed`
+- optionally add light evidence-packet grouping or neighbor expansion only if it directly improves citation-safe answer recovery on standards-style content
 
 Acceptance:
+- more answerable eval questions end with cited output instead of refusal
+- refusal reasons are explicit and traceable
+- Day 3 report clearly distinguishes:
+  - retrieval failures
+  - evidence sufficiency failures
+  - answer/citation formatting failures
 
-- more answerable questions end with cited output rather than avoidable refusal
-- refusal reasons are explicit in traces
-- evidence packets are visible in debug output
+Why this matters:  
+This matches the current project state more honestly: retrieval has improved, but answer-side robustness remains the more important Week 3 gap.
 
-### Day 4 — Eval pass + recruiter-visible ablation report
+### Day 4 - Eval pass + recruiter-visible ablation report
 
-Goal:
-
-Convert implementation work into one clean proof artifact.
+Goal:  
+Convert implementation work into measurable evidence.
 
 Work:
-
-- freeze a baseline config
-- run a small, targeted ablation set on the same eval set
+- freeze a baseline config and run it on the same eval set used for comparison
+- run a small, targeted ablation set rather than many scattered experiments
 - recommended ablations:
-  1. baseline hybrid retrieval
-  2. + query analysis / mode-aware retrieval plumbing
-  3. + evidence packets
-  4. + citation repair
-  5. + graph-lite signals if ready
+  1. baseline hybrid retrieval + direct `/ask`
+  2. + `/ask-agent` with `analyze_query`
+  3. + answer-side citation-repair pass
+  4. + any light evidence-packet / neighbor-expansion change (only if shipped)
+  5. + graph-lite navigation signals (if ready)
 - report:
   - Recall@k / MRR / nDCG
-  - strict and near-page overlap
-  - citation coverage / citation compliance
+  - strict page overlap and near-page overlap
+  - citation compliance / citation coverage
   - refusal rate and refusal reason breakdown
-- publish one concise dated report under `reports/eval/<date>/ablation.md`
+  - comparison of `/ask` vs `/ask-agent` behavior on representative prompts
+- write a concise report under `reports/eval/<date>/ablation.md`
+- summarize tradeoffs: what improved, what regressed, what remains open
 
 Acceptance:
+- one table clearly compares baseline vs upgraded configurations
+- one best default configuration is selected with justification
+- the report is concise enough to use in interviews and resume bullets
 
-- one table compares baseline vs upgraded configs
-- one best configuration is selected with justification
-- the report is usable in interviews and resume bullets
+Why this matters:  
+This is the proof artifact that turns technical work into hiring signal.
 
-### Day 5 — Docker packaging + secure local demo path
+### Day 5 - Docker packaging + secure local demo path
 
-Goal:
-
-Close the packaging story.
+Goal:  
+Close the packaging story and improve the “usable internal AI tool” signal.
 
 Work:
-
-- add Dockerfile and `docker-compose` setup for the API path
-- document environment variables and model/backend assumptions cleanly
-- write a short runbook for startup, index usage, and common failures
-- add a security-minded checklist appropriate for this project:
+- add Dockerfile and docker-compose setup for the API service
+- keep model weights out of the image; document mounted volumes / external local model runtime assumptions
+- document environment variables and secrets handling cleanly
+- add a runbook for local startup, index use, and common failure cases
+- include a basic security-minded checklist suitable for this project's scope:
   - no secrets in code
-  - no secrets in logs
   - pinned dependencies where practical
-  - local/offline assumptions documented
+  - explicit offline/local mode assumptions
   - allowlisted document corpus
   - auditable trace logs
+- test startup on a clean environment as closely as possible
 
 Acceptance:
+- `docker compose up` can start the main service path successfully
+- the README/runbook is sufficient for someone else to reproduce the demo
+- security and environment assumptions are documented explicitly
 
-- containerized startup is reproducible
-- another reader could follow the runbook without guessing
-- deployment and security assumptions are explicit
+Why this matters:  
+The target roles emphasize containerized AI apps, secure integration, and Linux-friendly engineering.
 
-### Day 6 — KG-lite / standards navigation layer
+### Day 6 - KG-lite / standards navigation layer
 
-Goal:
-
-Partially address the knowledge-organization side of the job without derailing the week.
+Goal:  
+Partially address the knowledge-organization side of the JD without derailing the week.
 
 Work:
-
-- extract lightweight entities and relations such as:
+- extract a lightweight structured layer from the corpus:
   - Document
   - Section
   - Algorithm
@@ -234,142 +237,49 @@ Work:
   - `near_algorithm`
   - `referenced_by_section`
   - `same_document_as`
-- use this only where it creates clear value:
-  - navigation for definition questions
-  - algorithm lookup
-  - compare-query evidence grouping
+- use this layer only where it gives clear value:
+  - improve navigation for definition and algorithm questions
+  - improve compare query evidence grouping
+  - improve debug output / explainer diagrams
 - keep implementation simple:
-  - JSON / adjacency artifact first
-  - no full graph DB requirement this week
+  - JSON or lightweight adjacency store first
+  - do not require a full graph database in Week 3
 
 Acceptance:
+- one or two retrieval/answer flows demonstrably benefit from this graph-lite structure
+- a simple artifact exists showing extracted entities/relations from the standards corpus
+- the README explains that this is a scoped knowledge-organization layer, not a full KG
 
-- one or two flows visibly benefit from graph-lite structure
-- a concrete artifact exists showing extracted relations
-- README explains the scope honestly
+Why this matters:  
+It gives you an honest partial story for knowledge graphs and intelligent data organization without overclaiming.
 
-### Day 7 — Polish and interview-facing packaging
+### Day 7 - Polish, docs, and interview-facing packaging
 
-Goal:
-
-Make the repo easy to explain and demo.
+Goal:  
+Make the work easy to explain, demo, and defend.
 
 Work:
-
-- update README and architecture notes
-- add one clear system diagram
-- prepare a short demo script with:
-  - one definition question
-  - one algorithm question
-  - one compare question
-  - one insufficient-evidence / refusal case
-- write a short engineering-decisions note covering:
-  - why no full KG yet
-  - why deterministic query analysis instead of open-ended query rewriting
-  - why citation repair matters
-  - why Docker/FastAPI were prioritized over more retrieval tuning alone
+- update README and architecture notes to reflect the upgraded system
+- add one system diagram showing:
+  - ingest/chunk/index
+  - `/ask` direct path
+  - `/ask-agent` graph path
+  - `analyze_query`
+  - hybrid retrieval
+  - answer/verify/refuse
+  - API + local serving path
+- write a short engineering decisions note covering:
+  - why `/ask` and `/ask-agent` both exist
+  - why graph-side query analysis disables retrieval-side auto variants / auto mode hints
+  - why answer-side repair was prioritized over more retrieval tweaks
+  - why Docker/FastAPI were prioritized over a full KG or fine-tuning
+- prepare a short demo script with 4-5 representative questions:
+  - definition question
+  - algorithm question
+  - compare question
+  - direct `/ask` vs `/ask-agent` contrast
+  - insufficient-evidence / refusal case
 
 Acceptance:
-
-- the repo is easy to understand quickly
-- the project is easy to demo and defend in an interview
-
-## What is intentionally not in Week 3
-
-These are valuable, but not the highest-ROI use of one week:
-
-- full knowledge graph construction
-- serious LLM fine-tuning pipeline
-- Kubernetes beyond a brief stretch mention
-- GCP deployment as a main deliverable
-- full MLOps stack with orchestration tools
-- major parser replacement or broad corpus expansion
-
-## Stretch goals only if ahead of schedule
-
-- add a tiny Streamlit or Gradio demo in front of FastAPI
-- add `pgvector` as a second retrieval backend
-- export graph-lite output into a tiny Neo4j prototype
-- add CI smoke tests for API + one retrieval query
-
-## Skills this project will still not fully cover, and how to work toward them
-
-### 1) Full LLM fine-tuning / embedding-model training
-
-Why it still falls short:
-
-- Week 3 can improve retrieval and answer quality, but it still will not honestly demonstrate substantial post-training work
-
-How to work toward it:
-
-- run one small LoRA/QLoRA experiment on a narrowly scoped task after Week 3
-- or fine-tune a lightweight reranker / embedding model on relevance pairs from the eval set
-- report dataset, objective, baseline, and before/after metrics
-- use HuggingFace + PyTorch so the work maps directly to common ML engineering expectations
-
-### 2) Real graph databases and query languages (`Neo4j`, `Cypher`, `SQL`)
-
-Why it still falls short:
-
-- graph-lite helps, but it is not the same as a true graph database workflow
-
-How to work toward it:
-
-- export graph-lite entities/relations into Neo4j after Week 3
-- write 5–10 concrete Cypher queries over standards entities
-- add one small demo query over algorithms/sections/operations
-- separately add PostgreSQL + `pgvector` as a persistent retrieval backend
-
-### 3) Kubernetes / cloud-native deployment / GCP
-
-Why it still falls short:
-
-- Docker is realistic this week; Kubernetes and cloud deployment are not the best primary use of limited time
-
-How to work toward it:
-
-- deploy the FastAPI container once to a small local or cloud environment
-- write a minimal deployment manifest and short ops note
-- keep the deployment story concrete rather than broad
-
-### 4) Production MLOps depth
-
-Why it still falls short:
-
-- the project can show evaluation discipline and packaging, but not a full production ML platform
-
-How to work toward it:
-
-- add CI for tests and one smoke evaluation
-- log retrieval and answer metrics over runs
-- introduce orchestration tools only if a real scaling or scheduling need appears
-
-### 5) Security engineering integration beyond secure-coding hygiene
-
-Why it still falls short:
-
-- the project can become security-aware, but it will not fully demonstrate collaboration with security engineers or enterprise security architecture
-
-How to work toward it:
-
-- add a short threat-model note covering prompt injection, unsafe evidence, secrets handling, and trace retention
-- document trust boundaries between corpus, retriever, and model
-- add dependency review / pinning and a small security checklist
-
-### 6) Large-scale search infrastructure
-
-Why it still falls short:
-
-- the corpus is small and standards-focused, so it does not prove distributed or billion-scale retrieval
-
-How to work toward it:
-
-- later add a backend such as `pgvector`, OpenSearch, or Elasticsearch behind the same retrieval interface
-- keep eval constant while swapping backends so the systems story is stronger
-- describe the project honestly as architecture-ready, not scale-proven
-
-## Interview framing
-
-A clean way to describe this iteration is:
-
-> I already had a citation-grounded RAG core over technical standards. In Week 3, I prioritized the gaps that mattered most for ML engineering roles: deployment, stronger agent control, answer robustness, measurable ablations, and a lightweight knowledge-organization layer. I deliberately avoided overreaching into full fine-tuning, full knowledge graphs, or a heavy cloud stack in one week.
+- someone can understand the project quickly from the repo
+- the architecture, tradeoffs, and outcomes are easy to communicate in an interview

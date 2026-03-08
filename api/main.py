@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from rag.config import SETTINGS
-from rag.service import ask_question, health_status, search_query
+from rag.service import ask_agent_question, ask_question, health_status, search_query
 
 
 app = FastAPI(title="nist-pqc-rag-agent", version="0.1.0")
@@ -47,4 +47,21 @@ async def post_ask(body: AskRequest) -> dict:
         "refusal_reason": payload["refusal_reason"],
         "trace_summary": payload["trace_summary"],
         "timing_ms": payload["timing_ms"],
+    }
+
+
+@app.post("/ask-agent")
+async def post_ask_agent(body: AskRequest) -> dict:
+    try:
+        payload = ask_agent_question(body.question, k=body.k)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {
+        "answer": payload["answer"],
+        "citations": payload["citations"],
+        "refusal_reason": payload["refusal_reason"],
+        "trace_summary": payload["trace_summary"],
+        "timing_ms": payload["timing_ms"],
+        "analysis": payload["analysis"],
     }

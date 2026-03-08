@@ -319,7 +319,7 @@ def _call_rag_answer(question: str, evidence: list[EvidenceItem]) -> dict:
     """
     Adapter for this repo: uses rag.rag_answer.build_cited_answer(question, hits, generate_fn).
     """
-    from rag.llm.gemini import make_generate_fn
+    from rag.llm.factory import get_backend
     from rag.rag_answer import build_cited_answer
     from rag.retriever.base import ChunkHit
 
@@ -335,7 +335,8 @@ def _call_rag_answer(question: str, evidence: list[EvidenceItem]) -> dict:
         for e in evidence
     ]
 
-    generate_fn = make_generate_fn()
+    llm_backend = get_backend()
+    generate_fn = lambda prompt: llm_backend.generate(prompt, temperature=SETTINGS.LLM_TEMPERATURE)
     result = build_cited_answer(question=question, hits=hits, generate_fn=generate_fn)
 
     citations = []

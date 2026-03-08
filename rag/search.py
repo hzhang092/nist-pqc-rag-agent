@@ -2,8 +2,8 @@
 Command-line interface for performing retrieval over the document chunks.
 
 This script provides a simple way to query the RAG system from the command line.
-It uses the shared retrieval entrypoint (`rag.retrieve.retrieve`) so search and
-ask stay aligned on behavior.
+It uses the shared retrieval service (`rag.service.search_query`) to perform
+searches with configurable retrieval modes and parameters.
 
 How to use:
     python -m rag.search "ML-KEM key generation"
@@ -15,25 +15,33 @@ How to use:
 
 Flags:
     --k
-        Final number of results returned.
+        Final number of results returned (default from SETTINGS.TOP_K).
     --mode
-        Retrieval mode: "base" for one backend, "hybrid" for FAISS+BM25 fusion.
+        Retrieval mode: "base" for single backend, "hybrid" for FAISS+BM25 fusion
+        (default from SETTINGS.RETRIEVAL_MODE).
     --backend
-        Backend used by base mode (e.g., faiss, bm25).
+        Backend used by base mode, e.g., faiss, bm25
+        (default from SETTINGS.VECTOR_BACKEND).
     --k0
-        Reciprocal Rank Fusion constant. Lower values emphasize top ranks more.
+        Reciprocal Rank Fusion constant. Lower values emphasize top ranks more
+        (default from SETTINGS.RETRIEVAL_RRF_K0).
     --candidate-multiplier
-        Expands per-query candidate pool before fusion (k * multiplier).
+        Expands per-source candidate pool before fusion (k * multiplier)
+        (default from SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER).
     --rerank-pool
-        Number of fused candidates considered by lightweight reranking.
+        Number of fused candidates considered before final rerank truncation
+        (default from SETTINGS.RETRIEVAL_RERANK_POOL).
     --no-query-fusion
         Disable deterministic query rewrites before retrieval.
     --no-rerank
-        Disable final lightweight lexical rerank step.
+        Disable lightweight lexical reranking step.
 
 Used by:
-    - Direct CLI entrypoint for developers (not imported by other project modules).
-    - Shares retrieval logic with `rag.ask` through `rag.retrieve.retrieve`.
+    - Direct CLI entrypoint for developers.
+    - Shares retrieval logic with other modules through `rag.service.search_query`.
+
+Output:
+    Prints query results with score, doc_id, page range, chunk_id, and preview text.
 
 Usage:
     python -m rag.search "your question here"

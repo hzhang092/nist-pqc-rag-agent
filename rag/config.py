@@ -148,7 +148,7 @@ class Settings:
     # Generation backend used by ask/service layers. gemini or ollama (local/OpenAI-compatible).
     LLM_BACKEND: str = _env_str("LLM_BACKEND", "ollama")
     # Backend-specific model override (for example qwen3:8B or gemini-2.5-flash).
-    LLM_MODEL: str = _env_str("LLM_MODEL", "")
+    LLM_MODEL: str = _env_str("LLM_MODEL", "qwen3:8B")
     # Base URL for local/OpenAI-compatible backends such as Ollama.
     LLM_BASE_URL: str = _env_str("LLM_BASE_URL", "http://localhost:11434")
     # Request timeout for model generation calls.

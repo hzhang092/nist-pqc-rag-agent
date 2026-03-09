@@ -1,46 +1,65 @@
 """
-This module defines tools for evidence retrieval, comparison, and summarization in the context of a LangChain-based RAG system.
+LangChain tool layer for bounded, citation-grounded retrieval in the RAG agent.
 
-Tools:
-- `retrieve`: Retrieves evidence chunks for a query using hybrid retrieval and fusion. Supports optional reranking if enabled in the pipeline.
-  Flags:
-    - `query` (str): The query string to retrieve evidence for.
-    - `k` (int): The number of top evidence chunks to retrieve (default: 8).
-    - `doc_id` (Optional[str]): Restrict retrieval to a specific document ID (default: None).
+Tools
+-----
+- retrieve
+    - Purpose: Return evidence chunks for a query via repo-configured retrieval/fusion.
+    - Key args:
+        - query (str)
+        - k (int, default=8)
+        - doc_id (Optional[str]) and/or doc_ids (Optional[List[str]]) for doc filtering
+        - mode_hint (Optional[str]); inferred automatically if omitted
+        - use_query_fusion (bool, default=True)
+        - enable_mode_variants (bool, default=True)
+    - Returns: JSON-serializable dict with `evidence` and per-item citation fields:
+        `doc_id`, `start_page`, `end_page`, `chunk_id`, `text`, `score`.
 
-- `resolve_definition`: Forces a definitions/notation-oriented retrieval pass for a term or symbol.
-  Flags:
-    - `term` (str): The term or symbol to retrieve definitions for.
-    - `k` (int): The number of top evidence chunks to retrieve (default: 8).
-    - `doc_id` (Optional[str]): Restrict retrieval to a specific document ID (default: None).
+- resolve_definition
+    - Purpose: Force definition/notation-oriented retrieval for a term/symbol.
+    - Key args:
+        - term (str)
+        - k (int, default=8)
+        - doc_id/doc_ids filters
+        - optional query override
+        - use_query_fusion, enable_mode_variants
+    - Returns: Same evidence schema as `retrieve`.
 
-- `compare`: Retrieves evidence for two topics and merges/deduplicates the results.
-  Flags:
-    - `topic_a` (str): The first topic to compare.
-    - `topic_b` (str): The second topic to compare.
-    - `k` (int): The number of top evidence chunks to retrieve for each topic (default: 6).
+- compare
+    - Purpose: Retrieve evidence for two topics, then merge and deduplicate by `chunk_id`.
+    - Key args:
+        - topic_a (str), topic_b (str)
+        - k (int, default=6) per topic
+        - doc_ids filter
+        - use_query_fusion, enable_mode_variants
+    - Returns: Merged evidence plus counts (`n_a`, `n_b`, `n_merged`).
 
-- `summarize`: Fetches chunks overlapping a document page range and returns them as evidence for a grounded summary.
-  Flags:
-    - `doc_id` (str): The document ID to summarize.
-    - `start_page` (int): The starting page number of the range.
-    - `end_page` (int): The ending page number of the range.
-    - `k` (int): The maximum number of evidence chunks to return (default: 30).
+- summarize
+    - Purpose: Deterministically collect chunks overlapping a page range for grounded summary generation.
+    - Key args:
+        - doc_id (str), start_page (int), end_page (int), k (int, default=30)
+    - Behavior:
+        - Reads `data/processed/chunks.jsonl`
+        - Selects overlapping page spans
+        - Stable sort by `(start_page, chunk_id)`
+    - Returns: Evidence items with required citation fields.
 
-Helper Functions:
-- `_load_chunks_meta`: Loads chunk metadata from the `chunks.jsonl` file.
-- `_chunks_for_doc_pages`: Retrieves chunks overlapping a specific document page range.
-- `_call_with_flexible_signature`: Calls a function with only the parameters it accepts.
-- `_find_retrieve_entrypoint`: Finds the retrieval entrypoint function in the repository.
-- `_normalize_hit`: Normalizes a ChunkHit-like object or dictionary to an `EvidenceItem`.
-- `_run_retrieve`: Executes the retrieval process and returns evidence items.
-- `_dedupe_evidence`: Deduplicates evidence items based on chunk IDs.
-- `_mode_hint_from_query`: Infers a mode hint from the query string.
+Helper behavior
+---------------
+- `_load_chunks_meta`: Lazy-loads/caches `chunks.jsonl` metadata.
+- `_chunks_for_doc_pages`: Page-overlap selection with deterministic ordering.
+- `_find_retrieve_entrypoint`: Locates retrieval function from known module/function candidates.
+- `_call_with_flexible_signature`: Passes only supported kwargs to retrieval entrypoint.
+- `_normalize_hit`: Converts dict/object hits into `EvidenceItem`.
+- `_merge_doc_ids`: Merges `doc_id` + `doc_ids`, removes empties/duplicates, preserves order.
+- `_run_retrieve`: Adapter for retrieval call + normalization.
+- `_dedupe_evidence`: Deduplicates evidence by `chunk_id`.
+- `_mode_hint_from_query`: Lightweight heuristic mode inference.
 
-Notes:
-- This module relies on the `langchain_core.tools` library for defining tools.
-- Evidence items are represented using the `EvidenceItem` dataclass from the `state` module.
-- Retrieval entrypoints and chunk metadata are dynamically loaded to ensure flexibility.
+Notes
+-----
+- This module is adapter-oriented so retrieval backends remain swappable.
+- Citation integrity is preserved by carrying page-level fields on every evidence item.
 """
 
 # rag/lc/tools.py
@@ -170,9 +189,43 @@ def _normalize_hit(hit: Any) -> EvidenceItem:
     )
 
 
-def _run_retrieve(query: str, k: int = 8, mode_hint: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> List[EvidenceItem]:
+def _merge_doc_ids(doc_ids: Optional[List[str]], doc_id: Optional[str]) -> Optional[List[str]]:
+    merged = []
+    if doc_id:
+        merged.append(str(doc_id))
+    merged.extend([str(item) for item in (doc_ids or []) if str(item or "").strip()])
+    if not merged:
+        return None
+    seen = set()
+    out: List[str] = []
+    for item in merged:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _run_retrieve(
+    query: str,
+    k: int = 8,
+    mode_hint: Optional[str] = None,
+    doc_ids: Optional[List[str]] = None,
+    use_query_fusion: bool = True,
+    enable_mode_variants: bool = True,
+) -> List[EvidenceItem]:
     fn = _find_retrieve_entrypoint()
-    hits = _call_with_flexible_signature(fn, query=query, k=k, mode_hint=mode_hint, filters=filters)
+    filters = {"doc_ids": list(doc_ids or [])} if doc_ids else None
+    hits = _call_with_flexible_signature(
+        fn,
+        query=query,
+        k=k,
+        mode_hint=mode_hint,
+        doc_ids=doc_ids,
+        filters=filters,
+        use_query_fusion=use_query_fusion,
+        enable_mode_variants=enable_mode_variants,
+    )
     # Expect list of hits
     return [_normalize_hit(h) for h in hits]
 
@@ -204,21 +257,36 @@ def _mode_hint_from_query(q: str) -> Optional[str]:
 # ---------------------------
 
 @tool
-def retrieve(query: str, k: int = 8, doc_id: Optional[str] = None) -> Dict[str, Any]:
+def retrieve(
+    query: str,
+    k: int = 8,
+    doc_id: Optional[str] = None,
+    doc_ids: Optional[List[str]] = None,
+    mode_hint: Optional[str] = None,
+    use_query_fusion: bool = True,
+    enable_mode_variants: bool = True,
+) -> Dict[str, Any]:
     """
     Retrieve evidence chunks for a query (hybrid + fusion + optional rerank if enabled in your pipeline).
     Returns JSON with evidence items including page spans for citations.
     """
-    mode_hint = _mode_hint_from_query(query)
-    filters = {"doc_id": doc_id} if doc_id else None
-    evidence = _run_retrieve(query=query, k=k, mode_hint=mode_hint, filters=filters)
+    resolved_mode_hint = mode_hint or _mode_hint_from_query(query)
+    resolved_doc_ids = _merge_doc_ids(doc_ids, doc_id)
+    evidence = _run_retrieve(
+        query=query,
+        k=k,
+        mode_hint=resolved_mode_hint,
+        doc_ids=resolved_doc_ids,
+        use_query_fusion=use_query_fusion,
+        enable_mode_variants=enable_mode_variants,
+    )
 
     return {
         "tool": "retrieve",
         "query": query,
         "k": k,
-        "mode_hint": mode_hint,
-        "filters": filters or {},
+        "mode_hint": resolved_mode_hint,
+        "filters": {"doc_ids": resolved_doc_ids or []},
         "evidence": [asdict(e) for e in evidence],
         "stats": {
             "n": len(evidence),
@@ -227,27 +295,50 @@ def retrieve(query: str, k: int = 8, doc_id: Optional[str] = None) -> Dict[str, 
 
 
 @tool
-def resolve_definition(term: str, k: int = 8, doc_id: Optional[str] = None) -> Dict[str, Any]:
+def resolve_definition(
+    term: str,
+    k: int = 8,
+    doc_id: Optional[str] = None,
+    doc_ids: Optional[List[str]] = None,
+    query: Optional[str] = None,
+    use_query_fusion: bool = True,
+    enable_mode_variants: bool = True,
+) -> Dict[str, Any]:
     """
     Force a definitions/notation-oriented retrieval pass for a term/symbol.
     """
-    query = f"definition of {term}; notation; definitions"
-    filters = {"doc_id": doc_id} if doc_id else None
-    evidence = _run_retrieve(query=query, k=k, mode_hint="definition", filters=filters)
+    resolved_query = str(query or f"definition of {term}; notation; definitions")
+    resolved_doc_ids = _merge_doc_ids(doc_ids, doc_id)
+    evidence = _run_retrieve(
+        query=resolved_query,
+        k=k,
+        mode_hint="definition",
+        doc_ids=resolved_doc_ids,
+        use_query_fusion=use_query_fusion,
+        enable_mode_variants=enable_mode_variants,
+    )
 
     return {
         "tool": "resolve_definition",
         "term": term,
-        "query": query,
+        "query": resolved_query,
         "k": k,
-        "filters": filters or {},
+        "mode_hint": "definition",
+        "filters": {"doc_ids": resolved_doc_ids or []},
         "evidence": [asdict(e) for e in evidence],
         "stats": {"n": len(evidence)},
     }
 
 
 @tool
-def compare(topic_a: str, topic_b: str, k: int = 6) -> Dict[str, Any]:
+def compare(
+    topic_a: str,
+    topic_b: str,
+    k: int = 6,
+    doc_ids: Optional[List[str]] = None,
+    use_query_fusion: bool = True,
+    enable_mode_variants: bool = True,
+) -> Dict[str, Any]:
     """
     Retrieve evidence for two topics and merge/dedupe.
     (The graph will do the actual comparison answer generation with citations.)
@@ -255,8 +346,22 @@ def compare(topic_a: str, topic_b: str, k: int = 6) -> Dict[str, Any]:
     qa = f"{topic_a} intended use-cases; definition; key properties"
     qb = f"{topic_b} intended use-cases; definition; key properties"
 
-    ea = _run_retrieve(query=qa, k=k, mode_hint=_mode_hint_from_query(qa), filters=None)
-    eb = _run_retrieve(query=qb, k=k, mode_hint=_mode_hint_from_query(qb), filters=None)
+    ea = _run_retrieve(
+        query=qa,
+        k=k,
+        mode_hint="compare",
+        doc_ids=doc_ids,
+        use_query_fusion=use_query_fusion,
+        enable_mode_variants=enable_mode_variants,
+    )
+    eb = _run_retrieve(
+        query=qb,
+        k=k,
+        mode_hint="compare",
+        doc_ids=doc_ids,
+        use_query_fusion=use_query_fusion,
+        enable_mode_variants=enable_mode_variants,
+    )
 
     merged = _dedupe_evidence(ea + eb)
 
@@ -265,6 +370,8 @@ def compare(topic_a: str, topic_b: str, k: int = 6) -> Dict[str, Any]:
         "topic_a": topic_a,
         "topic_b": topic_b,
         "k": k,
+        "mode_hint": "compare",
+        "filters": {"doc_ids": list(doc_ids or [])},
         "evidence": [asdict(e) for e in merged],
         "stats": {"n_a": len(ea), "n_b": len(eb), "n_merged": len(merged)},
     }

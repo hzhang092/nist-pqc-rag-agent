@@ -103,6 +103,27 @@ def _dedupe_preserve_order(items: Iterable[str], *, limit: int | None = None) ->
     return out
 
 
+def _normalize_doc_ids(doc_ids: Sequence[str] | None) -> List[str]:
+    if not doc_ids:
+        return []
+    out: List[str] = []
+    seen = set()
+    for doc_id in doc_ids:
+        key = str(doc_id or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def _filter_hits_by_doc_ids(hits: Sequence[ChunkHit], doc_ids: Sequence[str] | None) -> List[ChunkHit]:
+    allowed = set(_normalize_doc_ids(doc_ids))
+    if not allowed:
+        return list(hits)
+    return [hit for hit in hits if hit.doc_id in allowed]
+
+
 def _resolve_mode_hint(mode_hint: str | None, query: str) -> ModeHint:
     if mode_hint in MODE_HINT_VALUES:
         return mode_hint  # type: ignore[return-value]
@@ -417,6 +438,7 @@ def _build_hybrid_stage_outputs(
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
@@ -448,7 +470,9 @@ def _build_hybrid_stage_outputs(
     retrieve_started = perf_counter()
     normalized_query = normalize_identifier_like_spans(query)
     resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
+    resolved_doc_ids = _normalize_doc_ids(doc_ids)
     per_source_k = max(top_k * candidate_multiplier, top_k)
+    search_k = max(per_source_k * 4, per_source_k) if resolved_doc_ids else per_source_k
     fused_pool = max(top_k, rerank_pool)
     queries = (
         query_variants(
@@ -463,8 +487,8 @@ def _build_hybrid_stage_outputs(
 
     rankings: List[List[ChunkHit]] = []
     for q in queries:
-        vector_hits = faiss_retriever.search(q, k=per_source_k)
-        bm25_hits = bm25_retriever.search(q, k=per_source_k)
+        vector_hits = _filter_hits_by_doc_ids(faiss_retriever.search(q, k=search_k), resolved_doc_ids)[:per_source_k]
+        bm25_hits = _filter_hits_by_doc_ids(bm25_retriever.search(q, k=search_k), resolved_doc_ids)[:per_source_k]
         rankings.append(vector_hits)
         rankings.append(bm25_hits)
 
@@ -487,6 +511,9 @@ def _build_hybrid_stage_outputs(
     else:
         post_rerank_hits = rerank_input
 
+    post_rerank_hits = _filter_hits_by_doc_ids(post_rerank_hits, resolved_doc_ids)
+    pre_rerank_fused = _filter_hits_by_doc_ids(pre_rerank_fused, resolved_doc_ids)
+
     if timing_ms is not None:
         timing_ms["retrieve_ms"] = retrieve_elapsed_ms
         timing_ms["rerank_ms"] = rerank_elapsed_ms
@@ -508,6 +535,7 @@ def hybrid_search(
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
@@ -523,6 +551,7 @@ def hybrid_search(
         rerank_pool=rerank_pool,
         diagnostic_pre_rerank_depth=max(60, rerank_pool, top_k),
         mode_hint=mode_hint,
+        doc_ids=doc_ids,
         enable_mode_variants=enable_mode_variants,
         faiss=faiss,
         bm25=bm25,
@@ -541,6 +570,7 @@ def _build_base_stage_outputs(
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
     timing_ms: RetrievalTimingSummary | None = None,
 ) -> RetrievalStageOutputs:
@@ -557,8 +587,10 @@ def _build_base_stage_outputs(
     retrieve_started = perf_counter()
     normalized_query = normalize_identifier_like_spans(query)
     resolved_mode = _resolve_mode_hint(mode_hint, normalized_query)
+    resolved_doc_ids = _normalize_doc_ids(doc_ids)
     retriever = get_retriever(backend)
     per_query_k = max(top_k * candidate_multiplier, top_k)
+    search_k = max(per_query_k * 4, per_query_k) if resolved_doc_ids else per_query_k
     fused_pool = max(top_k, rerank_pool)
     queries = (
         query_variants(
@@ -571,7 +603,7 @@ def _build_base_stage_outputs(
         else [normalized_query]
     )
 
-    rankings = [retriever.search(q, k=per_query_k) for q in queries]
+    rankings = [_filter_hits_by_doc_ids(retriever.search(q, k=search_k), resolved_doc_ids)[:per_query_k] for q in queries]
     pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
     pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
     rerank_input = pre_rerank_fused[:fused_pool]
@@ -591,6 +623,9 @@ def _build_base_stage_outputs(
         rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
     else:
         post_rerank_hits = rerank_input
+
+    post_rerank_hits = _filter_hits_by_doc_ids(post_rerank_hits, resolved_doc_ids)
+    pre_rerank_fused = _filter_hits_by_doc_ids(pre_rerank_fused, resolved_doc_ids)
 
     if timing_ms is not None:
         timing_ms["retrieve_ms"] = retrieve_elapsed_ms
@@ -614,6 +649,7 @@ def base_search(
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
 ) -> List[ChunkHit]:
     """Runs single-backend retrieval; optionally fuses deterministic query variants."""
@@ -628,6 +664,7 @@ def base_search(
         rerank_pool=rerank_pool,
         diagnostic_pre_rerank_depth=max(60, rerank_pool, top_k),
         mode_hint=mode_hint,
+        doc_ids=doc_ids,
         enable_mode_variants=enable_mode_variants,
     )
     return outputs["final_hits"]
@@ -644,6 +681,7 @@ def retrieve(
     enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
 ) -> List[ChunkHit]:
     """Shared retrieval entrypoint for search/ask (base or hybrid + fusion)."""
@@ -658,6 +696,7 @@ def retrieve(
             enable_rerank=enable_rerank,
             rerank_pool=rerank_pool,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
         )
     if selected_mode == "base":
@@ -671,6 +710,7 @@ def retrieve(
             enable_rerank=enable_rerank,
             rerank_pool=rerank_pool,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
         )
     raise ValueError(f"Unknown retrieval mode: {mode}")
@@ -688,6 +728,7 @@ def retrieve_with_stages(
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
 ) -> RetrievalStageOutputs:
     """Retrieval entrypoint that also returns stage outputs for evaluation diagnostics."""
@@ -703,6 +744,7 @@ def retrieve_with_stages(
             rerank_pool=rerank_pool,
             diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
         )
     if selected_mode == "base":
@@ -717,6 +759,7 @@ def retrieve_with_stages(
             rerank_pool=rerank_pool,
             diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
         )
     raise ValueError(f"Unknown retrieval mode: {mode}")
@@ -734,6 +777,7 @@ def retrieve_with_stages_and_timing(
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
     enable_mode_variants: bool = True,
 ) -> tuple[RetrievalStageOutputs, RetrievalTimingSummary]:
     timing_ms: RetrievalTimingSummary = {
@@ -753,6 +797,7 @@ def retrieve_with_stages_and_timing(
             rerank_pool=rerank_pool,
             diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
             timing_ms=timing_ms,
         )
@@ -769,6 +814,7 @@ def retrieve_with_stages_and_timing(
             rerank_pool=rerank_pool,
             diagnostic_pre_rerank_depth=diagnostic_pre_rerank_depth,
             mode_hint=mode_hint,
+            doc_ids=doc_ids,
             enable_mode_variants=enable_mode_variants,
             timing_ms=timing_ms,
         )

@@ -16,6 +16,7 @@ from time import perf_counter
 from typing import Any
 
 from rag.config import SETTINGS, validate_settings
+from rag.lc.graph import run_agent
 from rag.llm.factory import get_backend
 from rag.rag_answer import build_cited_answer, select_evidence
 from rag.retrieve import retrieve_with_stages_and_timing
@@ -182,6 +183,48 @@ def _derive_refusal_reason(
     return "missing_citations_after_generation"
 
 
+def _agent_analysis_payload(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "original_query": str(state.get("original_query") or state.get("question") or ""),
+        "canonical_query": str(state.get("canonical_query") or state.get("question") or ""),
+        "mode_hint": str(state.get("mode_hint") or ""),
+        "required_anchors": list(state.get("required_anchors") or []),
+        "compare_topics": state.get("compare_topics"),
+        "doc_ids": list(state.get("doc_ids") or []),
+        "doc_family": str(state.get("doc_family") or ""),
+        "analysis_notes": str(state.get("analysis_notes") or ""),
+        "answer_prompt_question": str(state.get("answer_prompt_question") or state.get("question") or ""),
+    }
+
+
+def _agent_trace_summary(state: dict[str, Any]) -> dict[str, Any]:
+    analysis = _agent_analysis_payload(state)
+    evidence = state.get("evidence") or []
+    trace = state.get("trace") or []
+    plan = state.get("plan") or {}
+    first_step = next(
+        (event.get("node") for event in trace if event.get("type") == "step" and event.get("node")),
+        "",
+    )
+    return {
+        "entry_node": first_step,
+        "plan_action": plan.get("action"),
+        "steps": int(state.get("steps", 0)),
+        "retrieval_rounds": int(state.get("retrieval_round", 0)),
+        "tool_calls": int(state.get("tool_calls", 0)),
+        "stop_reason": str(state.get("stop_reason") or ""),
+        "refusal_reason": str(state.get("refusal_reason") or ""),
+        "trace_events": len(trace),
+        "top_chunk_ids": [item.get("chunk_id") for item in evidence[:5] if isinstance(item, dict)],
+        "original_query": analysis["original_query"],
+        "canonical_query": analysis["canonical_query"],
+        "mode_hint": analysis["mode_hint"],
+        "compare_topics": analysis["compare_topics"],
+        "doc_ids": analysis["doc_ids"],
+        "answer_prompt_question": analysis["answer_prompt_question"],
+    }
+
+
 def ask_question(
     question: str,
     *,
@@ -282,4 +325,36 @@ def ask_question(
             "rerank_pool": rerank_pool,
         },
         "evidence": [_hit_to_payload(hit, include_text=True) for hit in hits],
+    }
+
+
+def ask_agent_question(
+    question: str,
+    *,
+    k: int | None = None,
+) -> dict[str, Any]:
+    validate_settings()
+
+    total_started = perf_counter()
+    state = run_agent(question, k=k)
+    total_ms = (perf_counter() - total_started) * 1000.0
+    timing_ms = dict(state.get("timing_ms") or {})
+    timing_ms["total"] = round(float(timing_ms.get("total") or total_ms), 3)
+    timing_ms["analyze"] = round(float(timing_ms.get("analyze", 0.0)), 3)
+    timing_ms["retrieve"] = round(float(timing_ms.get("retrieve", 0.0)), 3)
+    timing_ms["generate"] = round(float(timing_ms.get("generate", 0.0)), 3)
+
+    answer = str(state.get("final_answer") or state.get("draft_answer") or "")
+    citations = list(state.get("citations") or [])
+    refusal_reason = str(state.get("refusal_reason") or "") or None
+    analysis = _agent_analysis_payload(state)
+
+    return {
+        "question": question,
+        "answer": answer,
+        "citations": citations,
+        "refusal_reason": refusal_reason,
+        "trace_summary": _agent_trace_summary(state),
+        "timing_ms": timing_ms,
+        "analysis": analysis,
     }

@@ -17,21 +17,36 @@ def _set_analysis(
     original_query: str | None = None,
     canonical_query: str,
     mode_hint: str,
+    rewrite_needed: bool = False,
+    protected_spans: list[str] | None = None,
     required_anchors: list[str] | None = None,
+    sparse_query: str | None = None,
+    dense_query: str | None = None,
+    subqueries: list[str] | None = None,
+    confidence: float = 0.81,
     compare_topics: CompareTopics | None = None,
     doc_ids: list[str] | None = None,
+    answer_prompt_question: str | None = None,
 ):
+    resolved_protected_spans = protected_spans or required_anchors or []
     set_query_analysis(
         state,
         QueryAnalysis(
             original_query=original_query or state["question"],
             canonical_query=canonical_query,
             mode_hint=mode_hint,  # type: ignore[arg-type]
+            rewrite_needed=rewrite_needed,
+            protected_spans=resolved_protected_spans,
             required_anchors=required_anchors or [],
+            sparse_query=sparse_query or canonical_query,
+            dense_query=dense_query or canonical_query,
+            subqueries=subqueries or [],
+            confidence=confidence,
             compare_topics=compare_topics,
             doc_ids=doc_ids or [],
             doc_family=None,
             analysis_notes="test",
+            answer_prompt_question=answer_prompt_question or (original_query or state["question"]),
         ),
     )
 
@@ -63,12 +78,18 @@ def test_build_query_analysis_modes(
 
     assert analysis.mode_hint == expected_mode
     assert analysis.doc_ids == expected_doc_ids
+    assert analysis.sparse_query
+    assert analysis.dense_query
+    assert analysis.subqueries == ([] if expected_mode != "compare" else analysis.subqueries)
+    assert analysis.confidence > 0.0
     if expected_compare_topics is None:
         assert analysis.compare_topics is None
+        assert analysis.subqueries == []
     else:
         assert analysis.compare_topics is not None
         assert analysis.compare_topics.topic_a == expected_compare_topics[0]
         assert analysis.compare_topics.topic_b == expected_compare_topics[1]
+        assert len(analysis.subqueries) == 2
 
 
 def test_build_query_analysis_falls_back_on_invalid_llm_output(monkeypatch):
@@ -79,16 +100,27 @@ def test_build_query_analysis_falls_back_on_invalid_llm_output(monkeypatch):
     assert analysis.mode_hint == "definition"
     assert analysis.canonical_query == "ML-KEM"
     assert analysis.doc_ids == ["NIST.FIPS.203"]
+    assert analysis.protected_spans == ["ML-KEM"]
+    assert analysis.sparse_query == "ML-KEM definition"
+    assert "definition and notation for ML-KEM" in analysis.dense_query
     assert analysis.analysis_notes == "deterministic-fallback"
 
 
-def test_route_uses_analyzed_compare_topics_without_reparsing(monkeypatch):
+def test_route_uses_single_retrieve_action_without_reparsing(monkeypatch):
     state = init_state("Compare these schemes")
     _set_analysis(
         state,
         canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
         mode_hint="compare",
+        rewrite_needed=True,
+        protected_spans=["ML-KEM", "ML-DSA"],
         compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
+        sparse_query="ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+        dense_query="compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+        subqueries=[
+            "ML-KEM intended use-cases and deployment context",
+            "ML-DSA intended use-cases and deployment context",
+        ],
         doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
     )
 
@@ -96,9 +128,31 @@ def test_route_uses_analyzed_compare_topics_without_reparsing(monkeypatch):
 
     out = g.node_route(state)
 
-    assert out["plan"]["action"] == "compare"
-    assert out["plan"]["args"]["topic_a"] == "ML-KEM"
-    assert out["plan"]["args"]["topic_b"] == "ML-DSA"
+    assert out["plan"]["action"] == "retrieve"
+    assert out["plan"]["mode_hint"] == "compare"
+    assert out["compare_topics"]["topic_a"] == "ML-KEM"
+    assert out["compare_topics"]["topic_b"] == "ML-DSA"
+
+
+def test_route_keeps_definition_as_retrieve_action():
+    state = init_state("What is ML-KEM?")
+    _set_analysis(
+        state,
+        canonical_query="ML-KEM",
+        mode_hint="definition",
+        rewrite_needed=True,
+        protected_spans=["ML-KEM"],
+        required_anchors=[],
+        sparse_query="ML-KEM definition",
+        dense_query="definition and notation for ML-KEM in FIPS 203",
+        doc_ids=["NIST.FIPS.203"],
+    )
+
+    out = g.node_route(state)
+
+    assert out["plan"]["action"] == "retrieve"
+    assert out["plan"]["mode_hint"] == "definition"
+    assert out["doc_ids"] == ["NIST.FIPS.203"]
 
 
 def test_node_answer_preserves_citation_key(monkeypatch):
@@ -165,7 +219,10 @@ def test_node_retrieve_passes_analyzed_args(monkeypatch):
         state,
         canonical_query="What are the steps in Algorithm 2 SHAKE128?",
         mode_hint="algorithm",
-        required_anchors=["Algorithm 2", "shake128"],
+        protected_spans=["Algorithm 2", "SHAKE128"],
+        required_anchors=["Algorithm 2", "SHAKE128"],
+        sparse_query="Algorithm 2 SHAKE128 steps FIPS 203",
+        dense_query="steps of Algorithm 2 SHAKE128 in ML-KEM standard",
         doc_ids=["NIST.FIPS.205"],
     )
     state["plan"] = {
@@ -182,6 +239,11 @@ def test_node_retrieve_passes_analyzed_args(monkeypatch):
     assert captured["k"] == 3
     assert captured["mode_hint"] == "algorithm"
     assert captured["doc_ids"] == ["NIST.FIPS.205"]
+    assert captured["canonical_query"] == "What are the steps in Algorithm 2 SHAKE128?"
+    assert captured["sparse_query"] == "Algorithm 2 SHAKE128 steps FIPS 203"
+    assert captured["dense_query"] == "steps of Algorithm 2 SHAKE128 in ML-KEM standard"
+    assert captured["subqueries"] == []
+    assert captured["protected_spans"] == ["Algorithm 2", "SHAKE128"]
     assert captured["use_query_fusion"] is False
     assert captured["enable_mode_variants"] is False
     assert out["last_retrieval_stats"]["doc_ids"] == ["NIST.FIPS.205"]
@@ -193,24 +255,32 @@ def test_node_refine_query_uses_analyzed_state_not_raw_question():
         state,
         canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
         mode_hint="compare",
+        rewrite_needed=True,
+        protected_spans=["ML-KEM", "ML-DSA"],
         compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
+        sparse_query="ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+        dense_query="compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+        subqueries=[
+            "ML-KEM intended use-cases and deployment context",
+            "ML-DSA intended use-cases and deployment context",
+        ],
         doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
     )
     state["plan"] = {
-        "action": "compare",
+        "action": "retrieve",
         "reason": "test",
         "query": state["canonical_query"],
-        "args": {"topic_a": "ML-KEM", "topic_b": "ML-DSA"},
+        "args": {},
         "mode_hint": "compare",
     }
-    state["stop_reason"] = "compare_doc_diversity_missing"
+    state["stop_reason"] = "one_sided_comparison"
 
     out = g.node_refine_query(state)
 
     assert out["plan"]["action"] == "retrieve"
-    assert "ML-KEM" in out["plan"]["query"]
-    assert "ML-DSA" in out["plan"]["query"]
-    assert "Compare these schemes" not in out["plan"]["query"]
+    assert "ML-KEM" in out["plan"]["args"]["sparse_query"]
+    assert "ML-DSA" in out["plan"]["args"]["sparse_query"]
+    assert "Compare these schemes" not in out["plan"]["args"]["sparse_query"]
 
 
 def test_loop_starts_with_analyze_query_and_then_answers(monkeypatch):
@@ -291,6 +361,8 @@ def test_assess_compare_requires_doc_diversity():
         state,
         canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
         mode_hint="compare",
+        rewrite_needed=True,
+        protected_spans=["ML-KEM", "ML-DSA"],
         compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
         doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
     )
@@ -315,7 +387,53 @@ def test_assess_compare_requires_doc_diversity():
 
     out = g.node_assess_evidence(state)
     assert out["evidence_sufficient"] is False
-    assert out["stop_reason"] == "compare_doc_diversity_missing"
+    assert out["stop_reason"] == "one_sided_comparison"
+
+
+def test_assess_flags_missing_protected_span():
+    state = init_state("What are the steps in Algorithm 2 SHAKE128?")
+    _set_analysis(
+        state,
+        canonical_query="What are the steps in Algorithm 2 SHAKE128?",
+        mode_hint="algorithm",
+        protected_spans=["Algorithm 2", "SHAKE128"],
+        required_anchors=["Algorithm 2", "SHAKE128"],
+        sparse_query="Algorithm 2 SHAKE128 steps",
+        dense_query="steps of Algorithm 2 SHAKE128",
+    )
+    state["evidence"] = [
+        {
+            "score": 0.9,
+            "chunk_id": "C1",
+            "doc_id": "NIST.FIPS.203",
+            "start_page": 10,
+            "end_page": 10,
+            "text": "ML-KEM procedure text without the requested anchor.",
+        }
+    ]
+
+    out = g.node_assess_evidence(state)
+
+    assert out["stop_reason"] == "missing_protected_span"
+
+
+def test_assess_flags_wrong_doc_scope():
+    state = init_state("What does FIPS 203 say about ML-KEM?")
+    _set_analysis(
+        state,
+        canonical_query="ML-KEM",
+        mode_hint="definition",
+        protected_spans=["FIPS 203", "ML-KEM"],
+        required_anchors=[],
+        sparse_query="ML-KEM definition",
+        dense_query="definition and notation for ML-KEM in FIPS 203",
+        doc_ids=["NIST.FIPS.203"],
+    )
+    state["evidence"] = []
+
+    out = g.node_assess_evidence(state)
+
+    assert out["stop_reason"] == "wrong_doc_scope"
 
 
 def test_budget_stop_refuses_without_calling_answer_llm(monkeypatch):

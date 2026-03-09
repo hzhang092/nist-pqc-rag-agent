@@ -327,3 +327,175 @@ Not completed in this update:
 - targeted Day 2 verification: complete
 - live real-model `/ask-agent` smoke: not completed in this update
 - full-suite green baseline: not restored in this update
+
+## 2026-03-09 - Day 2 planner upgrade: bounded retrieval planner for `analyze_query`
+
+### Goal
+Promote `analyze_query` from a structured query normalizer into a bounded retrieval planner for the LangGraph path, while keeping:
+- the deterministic analyzer as the guardrail and fallback layer
+- direct `/ask`, `/search`, and eval adapters on the existing query-centric retrieval contract
+- retrieval changes thin and graph-scoped rather than turning into a hidden retriever rewrite
+
+This update supersedes the execution description in the earlier Day 2 entry where:
+- graph routing still branched to `compare` and `resolve_definition`
+- analysis output was still centered on `canonical_query` + `required_anchors`
+
+### High-Level Before/After Planner Shape
+
+### Before
+`user question -> deterministic hints -> LLM-corrected JSON -> canonical_query -> graph retrieve`
+
+Behavior before this upgrade:
+- the LLM mostly validated or lightly rewrote deterministic analysis
+- `canonical_query` remained the main retrieval input
+- graph execution still depended on specialized compare / definition branches
+- evidence assessment remained coarse (`anchor_missing`, compare doc diversity, insufficient hits)
+
+### After
+`user question -> protected spans + guardrails -> LLM retrieval plan -> planner-aware retrieve -> bounded assess/refine`
+
+Behavior after this upgrade:
+- `analyze_query` emits retriever-oriented planner fields rather than just a normalized query
+- `canonical_query` remains for trace/debug/fallback, not as the only executable retrieval query
+- graph execution always routes through `retrieve` for QA requests
+- compare and definition remain visible as planner metadata rather than graph actions
+- assessment/refinement now operate on cheap planner-aware failure categories
+
+### Implementation
+
+#### 1) Planner schema and state
+Extended `QueryAnalysis`, LangGraph state, and serialized `query_analysis` with:
+- `rewrite_needed`
+- `protected_spans`
+- `sparse_query`
+- `dense_query`
+- `subqueries`
+- `confidence`
+
+Existing fields were intentionally preserved:
+- `original_query`
+- `canonical_query`
+- `mode_hint`
+- `required_anchors`
+- `compare_topics`
+- `doc_ids`
+- `doc_family`
+- `analysis_notes`
+- `answer_prompt_question`
+
+Role split after this change:
+- `canonical_query` = trace/debug/fallback
+- `protected_spans` = primary guardrail concept
+- `required_anchors` = compatibility mirror of assessable protected spans
+- `sparse_query` = BM25 input
+- `dense_query` = dense retrieval input
+- `answer_prompt_question` = wording passed to answer generation
+- `confidence` = trace/debug signal only in this phase
+
+#### 2) Deterministic guardrail layer + planner prompt
+Kept deterministic extraction for:
+- `Algorithm N`
+- `Table N`
+- `Section x.y`
+- dotted identifiers such as `ML-KEM.Decaps`
+- explicit doc references such as `FIPS 203` and `SP 800-227`
+- compare topic pairs
+
+The deterministic analyzer now also:
+- builds `protected_spans`
+- derives assessable `required_anchors`
+- computes deterministic fallback `sparse_query`, `dense_query`, `subqueries`, and `confidence`
+- remains the fallback if planner JSON is invalid or unavailable
+
+The planner prompt was reframed from “correct this JSON” to “plan retrieval for a bounded hybrid PQC standards retriever.”
+
+Prompt/validation rules now enforce:
+- preserve `protected_spans` exactly
+- do not invent document IDs
+- emit one allowed `mode_hint`
+- emit separate `sparse_query` and `dense_query`
+- emit `subqueries` only for compare mode
+- cap compare `subqueries` at 2
+- prefer `rewrite_needed = false` when the raw query is already retrieval-ready
+
+One additional hardening fix was added after a live agent smoke:
+- when deterministic doc scope is empty, the LLM can no longer invent `doc_ids` or `doc_family`
+
+#### 3) Graph simplification
+The graph was simplified intentionally:
+- `node_route` now always emits `Plan(action=\"retrieve\")` for query-answering requests
+- `mode_hint` and `compare_topics` remain in analysis state and traces
+- graph no longer depends on `compare` / `resolve_definition` as primary execution branches
+
+Important non-change:
+- the `compare` and `resolve_definition` tools remain in-repo
+- this is a graph-level simplification, not a repo-wide statement that those tools are removed
+
+#### 4) Thin planner-aware retrieval adapter
+Added a thin graph-side retrieval adapter without rewriting the shared retrieval API surface used by direct `/ask` and eval.
+
+Execution policy in this phase:
+- BM25 runs on `sparse_query`
+- dense retrieval runs on `dense_query`
+- compare mode is the only mode allowed to use `subqueries`
+- each compare subquery runs once through each backend
+- all rankings are fused with existing RRF
+- existing filtering and rerank behavior are reused
+- graph-path retrieval still keeps query fusion and retrieval-side mode-variant expansion disabled
+
+Backward compatibility:
+- the graph-facing `retrieve` tool accepts planner fields optionally
+- if planner fields are absent, the legacy `query`-based behavior still works
+
+#### 5) Planner-aware assessment and refinement
+Assessment was tightened to cheap operational categories only:
+- `missing_protected_span`
+- `wrong_doc_scope`
+- `one_sided_comparison`
+- `insufficient_hits`
+
+This avoids a larger scoring subsystem while making failure traces more actionable.
+
+Refinement remains bounded:
+- missing protected span -> append missing spans to the next sparse query and lightly tighten dense phrasing
+- wrong doc scope -> retry with existing scoped doc constraints
+- one-sided comparison -> bias toward the missing side’s topic/doc tokens
+- insufficient hits -> reuse light coverage-bias behavior
+
+### Regression Coverage
+Added or updated tests for:
+- planner-shaped analysis output fields
+- deterministic fallback when planner JSON is invalid
+- graph routing through `retrieve` while preserving compare/definition metadata
+- graph retrieval plumbing for `canonical_query`, `sparse_query`, `dense_query`, `subqueries`, and `protected_spans`
+- compare-mode-only subquery execution with a hard cap of 2
+- planner-aware assessment categories
+- `/ask-agent` service and API analysis payload compatibility
+
+### Verification
+Verified with:
+- `python -m py_compile rag/lc/state.py rag/lc/state_utils.py rag/lc/graph.py rag/lc/tools.py rag/retrieve.py rag/service.py tests/test_lc_graph.py tests/test_lc_tools.py tests/test_api.py tests/test_retrieve_eval_api.py`
+- `conda run -n pyt python -m pytest -q tests/test_lc_graph.py tests/test_lc_tools.py tests/test_api.py tests/test_retrieve_eval_api.py`
+
+Observed results:
+- targeted planner slice: `39 passed, 1 skipped`
+
+Additional live check performed:
+- one real `rag.agent.ask ... --json --no-trace` smoke was run for an anchored algorithm query
+- this surfaced planner over-scoping of `doc_ids` / `doc_family`
+- validation was tightened so deterministic doc-scope guardrails now win
+
+Not completed in this update:
+- full-suite regression rerun
+- stable live smoke coverage for broader compare/general prompts under the configured local backend
+
+### Status
+- planner-shaped `analyze_query`: complete
+- deterministic protected-span guardrail layer: complete
+- graph-level simplification to retrieve-only execution: complete
+- thin planner-aware retrieval adapter: complete
+- planner-aware assessment/refinement categories: complete
+- `/ask-agent` analysis payload upgrade: complete
+- targeted planner verification slice: complete
+- full-suite rerun: not completed in this update
+- broader live backend smoke set: not completed in this update

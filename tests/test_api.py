@@ -117,7 +117,13 @@ def test_service_ask_agent_maps_state(monkeypatch):
             "original_query": question,
             "canonical_query": "ML-KEM",
             "mode_hint": "definition",
+            "rewrite_needed": True,
+            "protected_spans": ["ML-KEM"],
             "required_anchors": [],
+            "sparse_query": "ML-KEM definition",
+            "dense_query": "definition and notation for ML-KEM in FIPS 203",
+            "subqueries": [],
+            "confidence": 0.91,
             "compare_topics": None,
             "doc_ids": ["NIST.FIPS.203"],
             "doc_family": "FIPS 203",
@@ -136,7 +142,7 @@ def test_service_ask_agent_maps_state(monkeypatch):
             ],
             "refusal_reason": "",
             "trace": [{"type": "step", "node": "analyze_query"}],
-            "plan": {"action": "resolve_definition"},
+            "plan": {"action": "retrieve"},
             "steps": 5,
             "retrieval_round": 1,
             "tool_calls": 1,
@@ -149,6 +155,7 @@ def test_service_ask_agent_maps_state(monkeypatch):
     payload = service_module.ask_agent_question("What is ML-KEM?", k=3)
 
     assert payload["analysis"]["canonical_query"] == "ML-KEM"
+    assert payload["analysis"]["sparse_query"] == "ML-KEM definition"
     assert payload["analysis"]["doc_ids"] == ["NIST.FIPS.203"]
     assert payload["trace_summary"]["entry_node"] == "analyze_query"
     assert payload["timing_ms"]["analyze"] == 1.0
@@ -275,7 +282,13 @@ def test_ask_agent_endpoint(monkeypatch):
                 "original_query": question,
                 "canonical_query": "ML-KEM",
                 "mode_hint": "definition",
+                "rewrite_needed": True,
+                "protected_spans": ["ML-KEM"],
                 "required_anchors": [],
+                "sparse_query": "ML-KEM definition",
+                "dense_query": "definition and notation for ML-KEM in FIPS 203",
+                "subqueries": [],
+                "confidence": 0.91,
                 "compare_topics": None,
                 "doc_ids": ["NIST.FIPS.203"],
                 "doc_family": "FIPS 203",
@@ -291,6 +304,7 @@ def test_ask_agent_endpoint(monkeypatch):
     payload = response.json()
     assert payload["answer"].startswith("ML-KEM")
     assert payload["analysis"]["canonical_query"] == "ML-KEM"
+    assert payload["analysis"]["dense_query"] == "definition and notation for ML-KEM in FIPS 203"
     assert payload["trace_summary"]["entry_node"] == "analyze_query"
     assert payload["timing_ms"]["analyze"] == 1.0
 
@@ -312,7 +326,13 @@ def test_ask_agent_endpoint_refusal(monkeypatch):
                 "original_query": question,
                 "canonical_query": question,
                 "mode_hint": "general",
+                "rewrite_needed": False,
+                "protected_spans": [],
                 "required_anchors": [],
+                "sparse_query": question,
+                "dense_query": question,
+                "subqueries": [],
+                "confidence": 0.42,
                 "compare_topics": None,
                 "doc_ids": [],
                 "doc_family": "",

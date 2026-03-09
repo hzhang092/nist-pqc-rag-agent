@@ -1,5 +1,5 @@
 """
-Unit tests for the `retrieve_for_eval` function in the `rag.retrieve` module.
+Unit tests for retrieval adapters in the `rag.retrieve` module.
 
 These tests validate the behavior of the retrieval evaluation API, ensuring that it correctly maps evaluation knobs to the hybrid search function and returns results in the expected format.
 
@@ -15,8 +15,30 @@ Notes:
 - This test ensures that the retrieval evaluation API behaves deterministically and adheres to the expected interface.
 """
 
-from rag.retrieve import retrieve_for_eval, retrieve_for_eval_with_stages
+from rag.retrieve import (
+    _build_planner_hybrid_stage_outputs,
+    retrieve_for_eval,
+    retrieve_for_eval_with_stages,
+)
 from rag.retriever.base import ChunkHit
+
+
+class _RecordingRetriever:
+    def __init__(self, prefix: str) -> None:
+        self.prefix = prefix
+        self.queries: list[str] = []
+
+    def search(self, query: str, k: int = 5):
+        self.queries.append(query)
+        base = query.replace(" ", "_")
+        return [
+            ChunkHit(1.0, f"{self.prefix}-{base}-1", "DOC", 1, 1, query),
+            ChunkHit(0.8, f"{self.prefix}-{base}-2", "DOC", 2, 2, query),
+        ][:k]
+
+    def score_text(self, query: str, text: str) -> float:
+        _ = query, text
+        return 0.0
 
 
 def test_retrieve_for_eval_returns_dicts_and_maps_eval_knobs(monkeypatch):
@@ -104,6 +126,80 @@ def test_retrieve_for_eval_returns_dicts_and_maps_eval_knobs(monkeypatch):
     assert rows[0]["start_page"] == 18
     assert rows[0]["end_page"] == 19
     assert rows[0]["mode"] == "hybrid"
+
+
+def test_planner_hybrid_uses_sparse_and_dense_queries_without_subqueries_for_non_compare():
+    faiss = _RecordingRetriever("dense")
+    bm25 = _RecordingRetriever("sparse")
+
+    outputs = _build_planner_hybrid_stage_outputs(
+        query="What is ML-KEM?",
+        canonical_query="ML-KEM",
+        sparse_query="ML-KEM definition",
+        dense_query="definition and notation for ML-KEM in FIPS 203",
+        subqueries=["should not run"],
+        top_k=2,
+        enable_rerank=False,
+        mode_hint="definition",
+        faiss=faiss,
+        bm25=bm25,
+    )
+
+    assert faiss.queries == ["definition and notation for ML-KEM in FIPS 203"]
+    assert bm25.queries == ["ML-KEM definition"]
+    assert len(outputs["final_hits"]) == 2
+
+
+def test_planner_hybrid_caps_compare_subqueries_and_is_deterministic():
+    faiss_a = _RecordingRetriever("dense")
+    bm25_a = _RecordingRetriever("sparse")
+    out_a = _build_planner_hybrid_stage_outputs(
+        query="Compare ML-DSA and SLH-DSA",
+        canonical_query="ML-DSA vs SLH-DSA",
+        sparse_query="ML-DSA SLH-DSA intended use-cases comparison",
+        dense_query="compare intended use-cases and deployment differences between ML-DSA and SLH-DSA",
+        subqueries=[
+            "ML-DSA intended use-cases and deployment context",
+            "SLH-DSA intended use-cases and deployment context",
+            "extra compare branch should be ignored",
+        ],
+        top_k=4,
+        enable_rerank=False,
+        mode_hint="compare",
+        faiss=faiss_a,
+        bm25=bm25_a,
+    )
+
+    faiss_b = _RecordingRetriever("dense")
+    bm25_b = _RecordingRetriever("sparse")
+    out_b = _build_planner_hybrid_stage_outputs(
+        query="Compare ML-DSA and SLH-DSA",
+        canonical_query="ML-DSA vs SLH-DSA",
+        sparse_query="ML-DSA SLH-DSA intended use-cases comparison",
+        dense_query="compare intended use-cases and deployment differences between ML-DSA and SLH-DSA",
+        subqueries=[
+            "ML-DSA intended use-cases and deployment context",
+            "SLH-DSA intended use-cases and deployment context",
+            "extra compare branch should be ignored",
+        ],
+        top_k=4,
+        enable_rerank=False,
+        mode_hint="compare",
+        faiss=faiss_b,
+        bm25=bm25_b,
+    )
+
+    assert faiss_a.queries == [
+        "compare intended use-cases and deployment differences between ML-DSA and SLH-DSA",
+        "ML-DSA intended use-cases and deployment context",
+        "SLH-DSA intended use-cases and deployment context",
+    ]
+    assert bm25_a.queries == [
+        "ML-DSA SLH-DSA intended use-cases comparison",
+        "ML-DSA intended use-cases and deployment context",
+        "SLH-DSA intended use-cases and deployment context",
+    ]
+    assert [hit.chunk_id for hit in out_a["final_hits"]] == [hit.chunk_id for hit in out_b["final_hits"]]
 
 
 def test_retrieve_for_eval_preserves_retrieval_order(monkeypatch):

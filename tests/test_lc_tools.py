@@ -108,6 +108,49 @@ def test_retrieve_tool_disables_fusion_and_mode_variants(monkeypatch):
     assert "(variants=False)" in res["evidence"][0]["text"]
 
 
+def test_retrieve_tool_passes_planner_fields_to_planner_entrypoint(monkeypatch):
+    captured = {}
+
+    def fake_planner_entrypoint(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "score": 1.0,
+                "chunk_id": "planner-1",
+                "doc_id": "NIST.FIPS.203",
+                "start_page": 10,
+                "end_page": 10,
+                "text": "planner hit",
+            }
+        ]
+
+    monkeypatch.setattr(t, "_find_planner_retrieve_entrypoint", lambda: fake_planner_entrypoint)
+    monkeypatch.setattr(t, "_find_retrieve_entrypoint", lambda: (_ for _ in ()).throw(RuntimeError("should not use legacy")))
+
+    res = t.retrieve.invoke(
+        {
+            "query": "What is ML-KEM?",
+            "canonical_query": "ML-KEM",
+            "sparse_query": "ML-KEM definition",
+            "dense_query": "definition and notation for ML-KEM in FIPS 203",
+            "subqueries": [],
+            "protected_spans": ["ML-KEM"],
+            "doc_ids": ["NIST.FIPS.203"],
+            "mode_hint": "definition",
+            "k": 1,
+        }
+    )
+
+    assert captured["query"] == "What is ML-KEM?"
+    assert captured["canonical_query"] == "ML-KEM"
+    assert captured["sparse_query"] == "ML-KEM definition"
+    assert captured["dense_query"] == "definition and notation for ML-KEM in FIPS 203"
+    assert captured["protected_spans"] == ["ML-KEM"]
+    assert captured["doc_ids"] == ["NIST.FIPS.203"]
+    assert res["planner"]["canonical_query"] == "ML-KEM"
+    assert res["planner"]["dense_query"] == "definition and notation for ML-KEM in FIPS 203"
+
+
 def test_compare_merges_and_dedupes(monkeypatch):
     # Patch _run_retrieve directly to avoid dealing with mode_hint heuristics
     def fake_run(

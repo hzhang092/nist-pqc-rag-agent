@@ -428,6 +428,199 @@ def rerank_fused_hits(
     return reranked[:top_k]
 
 
+def _planner_subqueries(mode_hint: str | None, subqueries: Sequence[str] | None) -> List[str]:
+    resolved_mode = _resolve_mode_hint(mode_hint, " ".join(subqueries or []))
+    if resolved_mode != "compare":
+        return []
+    cleaned = [
+        normalize_identifier_like_spans(str(item or "").strip())
+        for item in (subqueries or [])
+        if str(item or "").strip()
+    ]
+    return _dedupe_preserve_order([item for item in cleaned if item], limit=2)
+
+
+def _build_planner_hybrid_stage_outputs(
+    query: str,
+    *,
+    canonical_query: str | None = None,
+    sparse_query: str | None = None,
+    dense_query: str | None = None,
+    subqueries: Sequence[str] | None = None,
+    protected_spans: Sequence[str] | None = None,
+    top_k: int = SETTINGS.TOP_K,
+    candidate_multiplier: int = 4,
+    k0: int = 60,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
+    faiss: "FaissRetriever | None" = None,
+    bm25: BM25Retriever | None = None,
+    timing_ms: RetrievalTimingSummary | None = None,
+) -> RetrievalStageOutputs:
+    _ = protected_spans
+    if top_k <= 0:
+        raise ValueError("top_k must be > 0")
+    if candidate_multiplier <= 0:
+        raise ValueError("candidate_multiplier must be > 0")
+    if rerank_pool <= 0:
+        raise ValueError("rerank_pool must be > 0")
+    if diagnostic_pre_rerank_depth <= 0:
+        raise ValueError("diagnostic_pre_rerank_depth must be > 0")
+
+    if faiss is None:
+        try:
+            from rag.retriever.faiss_retriever import FaissRetriever
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "FAISS backend is unavailable. Install faiss to run hybrid retrieval."
+            ) from exc
+        faiss_retriever = FaissRetriever()
+    else:
+        faiss_retriever = faiss
+
+    bm25_retriever = bm25 or BM25Retriever()
+
+    retrieve_started = perf_counter()
+    resolved_doc_ids = _normalize_doc_ids(doc_ids)
+    rerank_query = normalize_identifier_like_spans(canonical_query or query or dense_query or sparse_query or "")
+    resolved_mode = _resolve_mode_hint(mode_hint, rerank_query)
+    lexical_query = normalize_identifier_like_spans(sparse_query or rerank_query)
+    semantic_query = normalize_identifier_like_spans(dense_query or rerank_query)
+    compare_subqueries = _planner_subqueries(resolved_mode, subqueries)
+
+    lexical_queries = _dedupe_preserve_order([lexical_query, *compare_subqueries])
+    semantic_queries = _dedupe_preserve_order([semantic_query, *compare_subqueries])
+
+    per_source_k = max(top_k * candidate_multiplier, top_k)
+    search_k = max(per_source_k * 4, per_source_k) if resolved_doc_ids else per_source_k
+    fused_pool = max(top_k, rerank_pool)
+
+    rankings: List[List[ChunkHit]] = []
+    for query_text in semantic_queries:
+        rankings.append(_filter_hits_by_doc_ids(faiss_retriever.search(query_text, k=search_k), resolved_doc_ids)[:per_source_k])
+    for query_text in lexical_queries:
+        rankings.append(_filter_hits_by_doc_ids(bm25_retriever.search(query_text, k=search_k), resolved_doc_ids)[:per_source_k])
+
+    pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
+    pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
+    rerank_input = pre_rerank_fused[:fused_pool]
+    retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
+
+    rerank_elapsed_ms = 0.0
+    if enable_rerank:
+        rerank_started = perf_counter()
+        post_rerank_hits = rerank_fused_hits(
+            query=rerank_query or lexical_query or semantic_query,
+            hits=rerank_input,
+            top_k=fused_pool,
+            bm25=bm25_retriever,
+            mode_hint=resolved_mode,
+        )
+        rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
+    else:
+        post_rerank_hits = rerank_input
+
+    post_rerank_hits = _filter_hits_by_doc_ids(post_rerank_hits, resolved_doc_ids)
+    pre_rerank_fused = _filter_hits_by_doc_ids(pre_rerank_fused, resolved_doc_ids)
+
+    if timing_ms is not None:
+        timing_ms["retrieve_ms"] = retrieve_elapsed_ms
+        timing_ms["rerank_ms"] = rerank_elapsed_ms
+
+    return {
+        "final_hits": post_rerank_hits[:top_k],
+        "pre_rerank_fused_hits": pre_rerank_fused,
+        "post_rerank_hits": post_rerank_hits,
+        "rerank_pool": fused_pool,
+    }
+
+
+def _build_planner_base_stage_outputs(
+    query: str,
+    *,
+    canonical_query: str | None = None,
+    sparse_query: str | None = None,
+    dense_query: str | None = None,
+    subqueries: Sequence[str] | None = None,
+    protected_spans: Sequence[str] | None = None,
+    top_k: int = SETTINGS.TOP_K,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    candidate_multiplier: int = 4,
+    k0: int = 60,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    diagnostic_pre_rerank_depth: int = 60,
+    mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
+    timing_ms: RetrievalTimingSummary | None = None,
+) -> RetrievalStageOutputs:
+    _ = protected_spans
+    if top_k <= 0:
+        raise ValueError("top_k must be > 0")
+    if candidate_multiplier <= 0:
+        raise ValueError("candidate_multiplier must be > 0")
+    if rerank_pool <= 0:
+        raise ValueError("rerank_pool must be > 0")
+    if diagnostic_pre_rerank_depth <= 0:
+        raise ValueError("diagnostic_pre_rerank_depth must be > 0")
+
+    retrieve_started = perf_counter()
+    resolved_doc_ids = _normalize_doc_ids(doc_ids)
+    rerank_query = normalize_identifier_like_spans(canonical_query or query or dense_query or sparse_query or "")
+    resolved_mode = _resolve_mode_hint(mode_hint, rerank_query)
+    primary_query = normalize_identifier_like_spans(
+        (dense_query or rerank_query)
+        if backend.lower().strip() == "faiss"
+        else (sparse_query or rerank_query)
+    )
+    planned_queries = _dedupe_preserve_order([primary_query, *_planner_subqueries(resolved_mode, subqueries)])
+    retriever = get_retriever(backend)
+
+    per_query_k = max(top_k * candidate_multiplier, top_k)
+    search_k = max(per_query_k * 4, per_query_k) if resolved_doc_ids else per_query_k
+    fused_pool = max(top_k, rerank_pool)
+    rankings = [
+        _filter_hits_by_doc_ids(retriever.search(query_text, k=search_k), resolved_doc_ids)[:per_query_k]
+        for query_text in planned_queries
+    ]
+    pre_rerank_depth = max(fused_pool, diagnostic_pre_rerank_depth)
+    pre_rerank_fused = rrf_fuse(rankings, top_k=pre_rerank_depth, k0=k0)
+    rerank_input = pre_rerank_fused[:fused_pool]
+    retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
+
+    rerank_elapsed_ms = 0.0
+    if enable_rerank:
+        bm25_retriever = BM25Retriever()
+        rerank_started = perf_counter()
+        post_rerank_hits = rerank_fused_hits(
+            query=rerank_query or primary_query,
+            hits=rerank_input,
+            top_k=fused_pool,
+            bm25=bm25_retriever,
+            mode_hint=resolved_mode,
+        )
+        rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
+    else:
+        post_rerank_hits = rerank_input
+
+    post_rerank_hits = _filter_hits_by_doc_ids(post_rerank_hits, resolved_doc_ids)
+    pre_rerank_fused = _filter_hits_by_doc_ids(pre_rerank_fused, resolved_doc_ids)
+
+    if timing_ms is not None:
+        timing_ms["retrieve_ms"] = retrieve_elapsed_ms
+        timing_ms["rerank_ms"] = rerank_elapsed_ms
+
+    return {
+        "final_hits": post_rerank_hits[:top_k],
+        "pre_rerank_fused_hits": pre_rerank_fused,
+        "post_rerank_hits": post_rerank_hits,
+        "rerank_pool": fused_pool,
+    }
+
+
 def _build_hybrid_stage_outputs(
     query: str,
     top_k: int = SETTINGS.TOP_K,
@@ -557,6 +750,66 @@ def hybrid_search(
         bm25=bm25,
     )
     return outputs["final_hits"]
+
+
+def execute_query_plan(
+    query: str,
+    *,
+    canonical_query: str | None = None,
+    sparse_query: str | None = None,
+    dense_query: str | None = None,
+    subqueries: Sequence[str] | None = None,
+    protected_spans: Sequence[str] | None = None,
+    k: int = SETTINGS.TOP_K,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
+) -> List[ChunkHit]:
+    """Executes a bounded planner query for the graph path without changing the shared query API."""
+    selected_mode = mode.lower().strip()
+    if selected_mode == "hybrid":
+        outputs = _build_planner_hybrid_stage_outputs(
+            query=query,
+            canonical_query=canonical_query,
+            sparse_query=sparse_query,
+            dense_query=dense_query,
+            subqueries=subqueries,
+            protected_spans=protected_spans,
+            top_k=k,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=max(60, rerank_pool, k),
+            mode_hint=mode_hint,
+            doc_ids=doc_ids,
+        )
+        return outputs["final_hits"]
+    if selected_mode == "base":
+        outputs = _build_planner_base_stage_outputs(
+            query=query,
+            canonical_query=canonical_query,
+            sparse_query=sparse_query,
+            dense_query=dense_query,
+            subqueries=subqueries,
+            protected_spans=protected_spans,
+            top_k=k,
+            backend=backend,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            diagnostic_pre_rerank_depth=max(60, rerank_pool, k),
+            mode_hint=mode_hint,
+            doc_ids=doc_ids,
+        )
+        return outputs["final_hits"]
+    raise ValueError(f"Unknown retrieval mode: {mode}")
 
 
 def _build_base_stage_outputs(

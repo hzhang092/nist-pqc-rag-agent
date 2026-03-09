@@ -33,7 +33,13 @@ def init_state(question: str, *, k: Optional[int] = None) -> AgentState:
         "original_query": question,
         "canonical_query": question,
         "mode_hint": "general",
+        "rewrite_needed": False,
+        "protected_spans": [],
         "required_anchors": [],
+        "sparse_query": question,
+        "dense_query": question,
+        "subqueries": [],
+        "confidence": 0.0,
         "compare_topics": None,
         "doc_ids": [],
         "doc_family": "",
@@ -75,7 +81,13 @@ def set_query_analysis(state: AgentState, analysis: QueryAnalysis) -> None:
     state["original_query"] = analysis.original_query
     state["canonical_query"] = analysis.canonical_query
     state["mode_hint"] = analysis.mode_hint
+    state["rewrite_needed"] = bool(analysis.rewrite_needed)
+    state["protected_spans"] = list(analysis.protected_spans)
     state["required_anchors"] = list(analysis.required_anchors)
+    state["sparse_query"] = analysis.sparse_query
+    state["dense_query"] = analysis.dense_query
+    state["subqueries"] = list(analysis.subqueries)
+    state["confidence"] = float(analysis.confidence)
     state["compare_topics"] = (
         analysis.compare_topics.to_dict() if analysis.compare_topics is not None else None
     )
@@ -83,7 +95,7 @@ def set_query_analysis(state: AgentState, analysis: QueryAnalysis) -> None:
     state["doc_family"] = analysis.doc_family or ""
     state["analysis_notes"] = analysis.analysis_notes or ""
     state["query_analysis"] = payload
-    state["answer_prompt_question"] = analysis.original_query
+    state["answer_prompt_question"] = analysis.answer_prompt_question or analysis.original_query
     add_trace(state, {"type": "analysis", **payload})
 
 def set_evidence(state: AgentState, evidence: List[EvidenceItem]) -> None:

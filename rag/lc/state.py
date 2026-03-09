@@ -95,15 +95,26 @@ class QueryAnalysis:
     original_query: str
     canonical_query: str
     mode_hint: Literal["general", "definition", "algorithm", "compare"]
+    rewrite_needed: bool
+    protected_spans: List[str]
     required_anchors: List[str]
+    sparse_query: str
+    dense_query: str
+    subqueries: List[str]
+    confidence: float
     compare_topics: Optional[CompareTopics] = None
     doc_ids: Optional[List[str]] = None
     doc_family: Optional[str] = None
     analysis_notes: Optional[str] = None
+    answer_prompt_question: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         payload = asdict(self)
         payload["doc_ids"] = list(self.doc_ids or [])
+        payload["protected_spans"] = list(self.protected_spans or [])
+        payload["required_anchors"] = list(self.required_anchors or [])
+        payload["subqueries"] = list(self.subqueries or [])
+        payload["answer_prompt_question"] = self.answer_prompt_question or self.original_query
         return payload
 
 
@@ -138,7 +149,13 @@ class AgentState(TypedDict, total=False):
     original_query: str
     canonical_query: str
     mode_hint: str
+    rewrite_needed: bool
+    protected_spans: List[str]
     required_anchors: List[str]
+    sparse_query: str
+    dense_query: str
+    subqueries: List[str]
+    confidence: float
     compare_topics: Optional[Dict[str, str]]
     doc_ids: List[str]
     doc_family: str

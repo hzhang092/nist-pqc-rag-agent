@@ -131,6 +131,8 @@ def _chunks_for_doc_pages(doc_id: str, start_page: int, end_page: int) -> List[D
 def _call_with_flexible_signature(fn, **kwargs):
     """Call fn but only pass parameters it actually accepts."""
     sig = inspect.signature(fn)
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()):
+        return fn(**{k: v for k, v in kwargs.items() if v is not None})
     allowed = {k: v for k, v in kwargs.items() if k in sig.parameters and v is not None}
     return fn(**allowed)
 
@@ -158,6 +160,26 @@ def _find_retrieve_entrypoint():
     raise RuntimeError(
         "Could not find retrieval entrypoint. "
         "Update candidates in rag/lc/tools.py::_find_retrieve_entrypoint(). "
+        f"Last error: {last_err}"
+    )
+
+
+def _find_planner_retrieve_entrypoint():
+    candidates: List[Tuple[str, str]] = [
+        ("rag.retrieve", "execute_query_plan"),
+    ]
+    last_err = None
+    for mod_name, fn_name in candidates:
+        try:
+            mod = importlib.import_module(mod_name)
+            fn = getattr(mod, fn_name)
+            return fn
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(
+        "Could not find planner retrieval entrypoint. "
+        "Update candidates in rag/lc/tools.py::_find_planner_retrieve_entrypoint(). "
         f"Last error: {last_err}"
     )
 
@@ -213,19 +235,60 @@ def _run_retrieve(
     doc_ids: Optional[List[str]] = None,
     use_query_fusion: bool = True,
     enable_mode_variants: bool = True,
+    canonical_query: Optional[str] = None,
+    sparse_query: Optional[str] = None,
+    dense_query: Optional[str] = None,
+    subqueries: Optional[List[str]] = None,
+    protected_spans: Optional[List[str]] = None,
 ) -> List[EvidenceItem]:
-    fn = _find_retrieve_entrypoint()
-    filters = {"doc_ids": list(doc_ids or [])} if doc_ids else None
-    hits = _call_with_flexible_signature(
-        fn,
-        query=query,
-        k=k,
-        mode_hint=mode_hint,
-        doc_ids=doc_ids,
-        filters=filters,
-        use_query_fusion=use_query_fusion,
-        enable_mode_variants=enable_mode_variants,
+    planner_requested = any(
+        [
+            str(sparse_query or "").strip(),
+            str(dense_query or "").strip(),
+            list(subqueries or []),
+            list(protected_spans or []),
+        ]
     )
+    filters = {"doc_ids": list(doc_ids or [])} if doc_ids else None
+    if planner_requested:
+        try:
+            fn = _find_planner_retrieve_entrypoint()
+            hits = _call_with_flexible_signature(
+                fn,
+                query=query,
+                canonical_query=canonical_query or query,
+                sparse_query=sparse_query or query,
+                dense_query=dense_query or query,
+                subqueries=subqueries,
+                protected_spans=protected_spans,
+                k=k,
+                mode_hint=mode_hint,
+                doc_ids=doc_ids,
+            )
+        except RuntimeError:
+            fn = _find_retrieve_entrypoint()
+            hits = _call_with_flexible_signature(
+                fn,
+                query=canonical_query or query,
+                k=k,
+                mode_hint=mode_hint,
+                doc_ids=doc_ids,
+                filters=filters,
+                use_query_fusion=use_query_fusion,
+                enable_mode_variants=enable_mode_variants,
+            )
+    else:
+        fn = _find_retrieve_entrypoint()
+        hits = _call_with_flexible_signature(
+            fn,
+            query=query,
+            k=k,
+            mode_hint=mode_hint,
+            doc_ids=doc_ids,
+            filters=filters,
+            use_query_fusion=use_query_fusion,
+            enable_mode_variants=enable_mode_variants,
+        )
     # Expect list of hits
     return [_normalize_hit(h) for h in hits]
 
@@ -263,6 +326,11 @@ def retrieve(
     doc_id: Optional[str] = None,
     doc_ids: Optional[List[str]] = None,
     mode_hint: Optional[str] = None,
+    canonical_query: Optional[str] = None,
+    sparse_query: Optional[str] = None,
+    dense_query: Optional[str] = None,
+    subqueries: Optional[List[str]] = None,
+    protected_spans: Optional[List[str]] = None,
     use_query_fusion: bool = True,
     enable_mode_variants: bool = True,
 ) -> Dict[str, Any]:
@@ -277,6 +345,11 @@ def retrieve(
         k=k,
         mode_hint=resolved_mode_hint,
         doc_ids=resolved_doc_ids,
+        canonical_query=canonical_query or query,
+        sparse_query=sparse_query,
+        dense_query=dense_query,
+        subqueries=subqueries,
+        protected_spans=protected_spans,
         use_query_fusion=use_query_fusion,
         enable_mode_variants=enable_mode_variants,
     )
@@ -287,6 +360,13 @@ def retrieve(
         "k": k,
         "mode_hint": resolved_mode_hint,
         "filters": {"doc_ids": resolved_doc_ids or []},
+        "planner": {
+            "canonical_query": canonical_query or query,
+            "sparse_query": sparse_query or query,
+            "dense_query": dense_query or query,
+            "subqueries": list(subqueries or []),
+            "protected_spans": list(protected_spans or []),
+        },
         "evidence": [asdict(e) for e in evidence],
         "stats": {
             "n": len(evidence),

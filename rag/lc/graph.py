@@ -286,15 +286,14 @@ def _extract_anchor_terms(question: str) -> List[str]:
     return _dedupe_strs(terms)
 
 
-def _evidence_contains_any_anchor(evidence: List[EvidenceItem], anchors: List[str]) -> bool:
-    if not anchors:
-        return True
-    lowered = [(e.text or "").lower() for e in evidence]
-    for anchor in anchors:
-        a = anchor.lower()
-        if any(a in txt for txt in lowered):
-            return True
-    return False
+def _extract_doc_reference_spans(question: str) -> List[str]:
+    spans: List[str] = []
+    for pattern, _doc_id, _family in _DOC_PATTERNS:
+        for match in pattern.finditer(question):
+            token = re.sub(r"\s+", " ", match.group(0).strip())
+            if token:
+                spans.append(token)
+    return _dedupe_strs(spans)
 
 
 def _doc_diversity(evidence: List[EvidenceItem]) -> int:
@@ -319,6 +318,117 @@ def _append_terms(base_query: str, terms: List[str]) -> str:
     if not extras:
         return base
     return f"{base} {' '.join(extras)}".strip()
+
+
+def _planner_query_text(value: Any, *, fallback: str, limit: int = 240) -> str:
+    text = normalize_identifier_like_spans(str(value or "").strip())
+    if not text:
+        text = normalize_identifier_like_spans(fallback.strip())
+    return text[:limit].strip()
+
+
+def _sanitize_float(value: Any, *, fallback: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = fallback
+    return max(0.0, min(1.0, round(number, 3)))
+
+
+def _extract_protected_spans(question: str) -> List[str]:
+    anchor_terms = _extract_anchor_terms(question)
+    doc_terms = _extract_doc_reference_spans(question)
+    return _dedupe_strs(anchor_terms + doc_terms)
+
+
+def _is_doc_reference_span(span: str) -> bool:
+    doc_ids, _doc_family = _detect_doc_scope(span)
+    return bool(doc_ids)
+
+
+def _assessable_protected_spans(protected_spans: List[str]) -> List[str]:
+    return [span for span in _dedupe_strs(protected_spans) if not _is_doc_reference_span(span)]
+
+
+def _topic_expected_doc_id(topic: str) -> Optional[str]:
+    doc_ids, _doc_family = _detect_doc_scope(topic)
+    return doc_ids[0] if doc_ids else None
+
+
+def _base_compare_query(compare_topics: CompareTopics) -> str:
+    return f"{compare_topics.topic_a} {compare_topics.topic_b} intended use-cases comparison"
+
+
+def _default_compare_subqueries(compare_topics: CompareTopics) -> List[str]:
+    return [
+        f"{compare_topics.topic_a} intended use-cases and deployment context",
+        f"{compare_topics.topic_b} intended use-cases and deployment context",
+    ]
+
+
+def _compute_planner_queries(
+    *,
+    original_query: str,
+    canonical_query: str,
+    mode_hint: str,
+    protected_spans: List[str],
+    compare_topics: Optional[CompareTopics],
+    definition_term: Optional[str],
+    doc_family: Optional[str],
+) -> tuple[bool, str, str, List[str], str]:
+    normalized_question = normalize_identifier_like_spans(original_query.strip())
+    protected_tokens = [span for span in protected_spans if span.lower() not in normalized_question.lower()]
+    answer_prompt_question = original_query.strip() or canonical_query
+
+    if mode_hint == "compare" and compare_topics is not None:
+        sparse_query = _append_terms(
+            _base_compare_query(compare_topics),
+            protected_spans + _topic_doc_bias_tokens(compare_topics.topic_a) + _topic_doc_bias_tokens(compare_topics.topic_b),
+        )
+        dense_query = (
+            f"compare intended use-cases and deployment differences between "
+            f"{compare_topics.topic_a} and {compare_topics.topic_b}"
+        )
+        return True, sparse_query, dense_query, _default_compare_subqueries(compare_topics), answer_prompt_question
+
+    if mode_hint == "definition":
+        target = definition_term or canonical_query or normalized_question
+        sparse_query = _append_terms(target, ["definition", *protected_tokens])
+        dense_suffix = f" in {doc_family}" if doc_family else " in NIST PQC standards"
+        dense_query = f"definition and notation for {target}{dense_suffix}"
+        rewrite_needed = normalize_identifier_like_spans(target).lower() != normalized_question.lower()
+        return rewrite_needed, sparse_query, dense_query, [], answer_prompt_question
+
+    if mode_hint == "algorithm":
+        anchor_text = " ".join(_assessable_protected_spans(protected_spans)) or canonical_query or normalized_question
+        sparse_query = _append_terms(normalized_question or canonical_query, protected_tokens)
+        dense_query = f"steps and procedure for {anchor_text}"
+        if doc_family:
+            dense_query = f"{dense_query} in {doc_family}"
+        return False, sparse_query, dense_query, [], answer_prompt_question
+
+    sparse_query = _append_terms(normalized_question or canonical_query, protected_tokens)
+    dense_query = normalized_question or canonical_query
+    return False, sparse_query, dense_query, [], answer_prompt_question
+
+
+def _deterministic_confidence(
+    *,
+    compare_topics: Optional[CompareTopics],
+    protected_spans: List[str],
+    doc_ids: List[str],
+    definition_term: Optional[str],
+) -> float:
+    score = 0.52
+    if compare_topics is not None:
+        score += 0.16
+    if protected_spans:
+        score += 0.12
+    if doc_ids:
+        score += 0.08
+    if definition_term:
+        score += 0.05
+    return min(0.95, round(score, 3))
 
 
 def _infer_mode_hint(
@@ -353,15 +463,8 @@ def _build_canonical_query(
 
 
 def _deterministic_query_analysis(question: str) -> QueryAnalysis:
-    """Performs a deterministic analysis of the input question to extract structured hints for retrieval.
-    This function uses regex patterns and heuristics to analyze the question without any LLM calls.
-    The analysis includes:
-    - Extracting comparison topics if the question is a comparison.
-    - Extracting anchor terms that indicate specific sections, algorithms, or tables.
-    - Detecting any explicit document mentions to scope retrieval.
-    - Inferring a mode hint (definition, algorithm, compare, general) based on question patterns.
-    - Building a canonical query that normalizes the input for retrieval."""
-    
+    """Builds a bounded deterministic retrieval plan used as the planner guardrail and fallback."""
+
     original_query = question.strip()
     topic_a, topic_b = _extract_compare_topics(original_query)
     compare_topics = (
@@ -369,7 +472,8 @@ def _deterministic_query_analysis(question: str) -> QueryAnalysis:
         if topic_a and topic_b
         else None
     )
-    required_anchors = _extract_anchor_terms(original_query)
+    protected_spans = _extract_protected_spans(original_query)
+    required_anchors = _assessable_protected_spans(protected_spans)
     doc_ids, doc_family = _detect_doc_scope(original_query)
     mode_hint = _infer_mode_hint(
         original_query,
@@ -383,41 +487,74 @@ def _deterministic_query_analysis(question: str) -> QueryAnalysis:
         compare_topics=compare_topics,
         definition_term=definition_term,
     )
+    rewrite_needed, sparse_query, dense_query, subqueries, answer_prompt_question = _compute_planner_queries(
+        original_query=original_query,
+        canonical_query=canonical_query,
+        mode_hint=mode_hint,
+        protected_spans=protected_spans,
+        compare_topics=compare_topics,
+        definition_term=definition_term,
+        doc_family=doc_family,
+    )
     analysis_notes = "deterministic-fallback"
     return QueryAnalysis(
         original_query=original_query,
         canonical_query=canonical_query,
         mode_hint=mode_hint,  # type: ignore[arg-type]
+        rewrite_needed=rewrite_needed,
+        protected_spans=protected_spans,
         required_anchors=required_anchors,
+        sparse_query=sparse_query,
+        dense_query=dense_query,
+        subqueries=subqueries,
+        confidence=_deterministic_confidence(
+            compare_topics=compare_topics,
+            protected_spans=protected_spans,
+            doc_ids=doc_ids,
+            definition_term=definition_term,
+        ),
         compare_topics=compare_topics,
         doc_ids=doc_ids,
         doc_family=doc_family,
         analysis_notes=analysis_notes,
+        answer_prompt_question=answer_prompt_question,
     )
 
 
 def _analysis_system_prompt() -> str:
     allowed_doc_ids = ", ".join(ALLOWED_DOC_IDS)
     return (
-        "You analyze PQC RAG queries for a bounded retrieval controller.\n"
+        "You are a retrieval planner for a bounded hybrid PQC standards retriever.\n"
         "Return JSON only, no markdown, no prose.\n"
         "Schema keys:\n"
         '- canonical_query: string\n'
         '- mode_hint: one of "definition", "algorithm", "compare", "general"\n'
+        '- rewrite_needed: boolean\n'
+        '- protected_spans: array of strings\n'
         '- required_anchors: array of strings\n'
+        '- sparse_query: string\n'
+        '- dense_query: string\n'
+        '- subqueries: array of strings\n'
         '- compare_topics: null or {"topic_a": string, "topic_b": string}\n'
         f'- doc_ids: array of strings chosen only from [{allowed_doc_ids}]\n'
         '- doc_family: null or short string\n'
+        '- answer_prompt_question: string\n'
         '- analysis_notes: null or short string\n'
-        "Prefer short bounded values. Do not invent anchors or doc_ids."
+        '- confidence: number between 0 and 1\n'
+        "Rules:\n"
+        "- Preserve every protected span exactly.\n"
+        "- Do not invent doc_ids.\n"
+        "- Emit subqueries only for compare mode; at most 2 subqueries.\n"
+        "- Keep sparse_query lexical and dense_query semantic.\n"
+        "- Prefer rewrite_needed=false when the user query is already precise."
     )
 
 
 def _analysis_user_prompt(question: str, deterministic: QueryAnalysis) -> str:
     return (
         f"Question: {question.strip()}\n"
-        f"Deterministic hints: {json.dumps(deterministic.to_dict(), ensure_ascii=False)}\n"
-        "Return a corrected JSON object that follows the schema exactly."
+        f"Deterministic guardrails: {json.dumps(deterministic.to_dict(), ensure_ascii=False)}\n"
+        "Return a retrieval plan JSON object that follows the schema exactly."
     )
 
 
@@ -450,6 +587,38 @@ def _normalize_compare_topics(value: Any) -> Optional[CompareTopics]:
     return CompareTopics(topic_a=topic_a, topic_b=topic_b)
 
 
+def _normalize_planner_doc_ids(raw_doc_ids: Any, deterministic: QueryAnalysis) -> List[str]:
+    if not deterministic.doc_ids:
+        return []
+    normalized = _normalize_doc_ids(raw_doc_ids)
+    allowed = set(deterministic.doc_ids)
+    normalized = [doc_id for doc_id in normalized if doc_id in allowed]
+    return normalized or list(deterministic.doc_ids or [])
+
+
+def _normalize_protected_spans(value: Any, deterministic: QueryAnalysis) -> List[str]:
+    raw_items = value if isinstance(value, list) else []
+    candidate_spans = _dedupe_strs([str(item).strip() for item in raw_items])
+    protected_spans = list(deterministic.protected_spans or [])
+    for span in candidate_spans:
+        if span.lower() not in {item.lower() for item in protected_spans}:
+            protected_spans.append(span)
+    return _dedupe_strs(protected_spans)
+
+
+def _normalize_subqueries(value: Any, *, mode_hint: str, deterministic: QueryAnalysis) -> List[str]:
+    if mode_hint != "compare":
+        return []
+    raw_items = value if isinstance(value, list) else list(deterministic.subqueries or [])
+    cleaned = [
+        _planner_query_text(item, fallback="")
+        for item in raw_items
+        if str(item or "").strip()
+    ]
+    out = _dedupe_strs([item for item in cleaned if item])
+    return out[:2] if out else list(deterministic.subqueries or [])[:2]
+
+
 def _validate_query_analysis(raw: Dict[str, Any], deterministic: QueryAnalysis) -> QueryAnalysis:
     compare_topics = _normalize_compare_topics(raw.get("compare_topics")) or deterministic.compare_topics
     mode_hint = str(raw.get("mode_hint") or deterministic.mode_hint).strip().lower()
@@ -458,28 +627,39 @@ def _validate_query_analysis(raw: Dict[str, Any], deterministic: QueryAnalysis) 
     if mode_hint not in ANALYSIS_MODE_VALUES:
         mode_hint = deterministic.mode_hint
 
-    canonical_query = normalize_identifier_like_spans(
-        str(raw.get("canonical_query") or deterministic.canonical_query).strip()
+    canonical_query = _planner_query_text(raw.get("canonical_query"), fallback=deterministic.canonical_query)
+    rewrite_needed = bool(raw.get("rewrite_needed", deterministic.rewrite_needed))
+    protected_spans = _normalize_protected_spans(raw.get("protected_spans"), deterministic)
+    required_anchors = _assessable_protected_spans(protected_spans)
+    sparse_query = _planner_query_text(raw.get("sparse_query"), fallback=deterministic.sparse_query)
+    dense_query = _planner_query_text(raw.get("dense_query"), fallback=deterministic.dense_query)
+    subqueries = _normalize_subqueries(raw.get("subqueries"), mode_hint=mode_hint, deterministic=deterministic)
+    doc_ids = _normalize_planner_doc_ids(raw.get("doc_ids"), deterministic)
+    doc_family = deterministic.doc_family or None
+    answer_prompt_question = _planner_query_text(
+        raw.get("answer_prompt_question"),
+        fallback=deterministic.answer_prompt_question or deterministic.original_query,
+        limit=320,
     )
-    if not canonical_query:
-        canonical_query = deterministic.canonical_query
-
-    required_anchors = _dedupe_strs(
-        [str(item).strip() for item in (raw.get("required_anchors") or deterministic.required_anchors or [])]
-    )
-    doc_ids = _normalize_doc_ids(raw.get("doc_ids")) or list(deterministic.doc_ids or [])
-    doc_family = str(raw.get("doc_family") or deterministic.doc_family or "").strip() or None
     analysis_notes = _sanitize_analysis_notes(raw.get("analysis_notes")) or deterministic.analysis_notes
+    confidence = _sanitize_float(raw.get("confidence"), fallback=deterministic.confidence)
 
     return QueryAnalysis(
         original_query=deterministic.original_query,
         canonical_query=canonical_query,
         mode_hint=mode_hint,  # type: ignore[arg-type]
+        rewrite_needed=rewrite_needed,
+        protected_spans=protected_spans,
         required_anchors=required_anchors,
+        sparse_query=sparse_query,
+        dense_query=dense_query,
+        subqueries=subqueries,
+        confidence=confidence,
         compare_topics=compare_topics,
         doc_ids=doc_ids,
         doc_family=doc_family,
         analysis_notes=analysis_notes,
+        answer_prompt_question=answer_prompt_question,
     )
 
 
@@ -505,56 +685,147 @@ def _build_query_analysis(question: str) -> QueryAnalysis:
         if analysis.analysis_notes:
             notes = analysis.analysis_notes
         else:
-            notes = "llm-validated"
+            notes = "llm-planned"
         return QueryAnalysis(
             original_query=analysis.original_query,
             canonical_query=analysis.canonical_query,
             mode_hint=analysis.mode_hint,
+            rewrite_needed=analysis.rewrite_needed,
+            protected_spans=analysis.protected_spans,
             required_anchors=analysis.required_anchors,
+            sparse_query=analysis.sparse_query,
+            dense_query=analysis.dense_query,
+            subqueries=analysis.subqueries,
+            confidence=analysis.confidence,
             compare_topics=analysis.compare_topics,
             doc_ids=analysis.doc_ids,
             doc_family=analysis.doc_family,
             analysis_notes=notes,
+            answer_prompt_question=analysis.answer_prompt_question,
         )
     except Exception:
         return deterministic
 
 
-def _build_refined_query(state: AgentState) -> Tuple[str, str]:
-    plan = state.get("plan") or {}
-    base_query = str(plan.get("query") or state.get("canonical_query") or state["question"]).strip()
-    reason = str(state.get("stop_reason", "")).lower()
-    anchors = list(state.get("required_anchors") or [])
-    compare_topics = state.get("compare_topics") or {}
+def _text_contains_span(text: str, span: str) -> bool:
+    normalized_text = normalize_identifier_like_spans(text or "").lower()
+    normalized_span = normalize_identifier_like_spans(span or "").lower()
+    if not normalized_span:
+        return False
+    if re.search(r"[._-]|\d|\s", normalized_span):
+        return normalized_span in normalized_text
+    return re.search(rf"\b{re.escape(normalized_span)}\b", normalized_text) is not None
 
-    if "anchor_missing" in reason and anchors:
-        return _append_terms(base_query, anchors), "anchor_token_bias"
 
+def _missing_protected_spans(evidence: List[EvidenceItem], protected_spans: List[str]) -> List[str]:
+    assessable = _assessable_protected_spans(protected_spans)
+    if not assessable:
+        return []
+    missing: List[str] = []
+    for span in assessable:
+        if any(_text_contains_span(item.text, span) for item in evidence):
+            continue
+        missing.append(span)
+    return missing
+
+
+def _comparison_missing_sides(
+    evidence: List[EvidenceItem],
+    *,
+    compare_topics: Dict[str, str],
+    doc_ids: List[str],
+) -> List[str]:
     topic_a = str(compare_topics.get("topic_a") or "").strip()
     topic_b = str(compare_topics.get("topic_b") or "").strip()
-    if "compare_doc_diversity_missing" in reason and topic_a and topic_b:
-        doc_tokens = _topic_doc_bias_tokens(topic_a) + _topic_doc_bias_tokens(topic_b)
-        terms = [topic_a, topic_b, "comparison", "intended use-cases", *doc_tokens]
-        return _append_terms(base_query, terms), "compare_doc_bias"
+    topics = [topic for topic in (topic_a, topic_b) if topic]
+    if len(topics) < 2:
+        return []
 
-    if "insufficient_hits" in reason:
-        if str(plan.get("action")) == "resolve_definition":
-            args = plan.get("args", {}) or {}
-            term = str(args.get("term") or state.get("canonical_query") or state["question"]).strip()
-            return f"definition of {term}; notation; section", "definition_bias"
-        return _append_terms(base_query, ["section", "algorithm", "definition"]), "coverage_bias"
+    present_docs = {item.doc_id for item in evidence}
+    expected_doc_pairs = [(topic, _topic_expected_doc_id(topic)) for topic in topics]
+    if len(doc_ids) >= 2 and all(doc_id for _topic, doc_id in expected_doc_pairs):
+        missing_topics = [topic for topic, doc_id in expected_doc_pairs if doc_id not in present_docs]
+        if missing_topics:
+            return missing_topics
 
-    return base_query, "no_change"
+    missing_topics = []
+    for topic in topics:
+        if any(_text_contains_span(item.text, topic) for item in evidence):
+            continue
+        missing_topics.append(topic)
+    return missing_topics
+
+
+def _build_refined_queries(state: AgentState) -> tuple[str, str, List[str], str]:
+    plan = state.get("plan") or {}
+    plan_args = plan.get("args", {}) or {}
+    sparse_query = str(plan_args.get("sparse_query") or state.get("sparse_query") or state["question"]).strip()
+    dense_query = str(plan_args.get("dense_query") or state.get("dense_query") or state["question"]).strip()
+    subqueries = list(plan_args.get("subqueries") or state.get("subqueries") or [])
+    reason = str(state.get("stop_reason", "")).lower()
+
+    if reason == "missing_protected_span":
+        missing_spans = _missing_protected_spans(
+            _to_evidence_items(state.get("evidence", [])),
+            list(state.get("protected_spans") or []),
+        )
+        bias_terms = missing_spans or list(state.get("required_anchors") or [])
+        return (
+            _append_terms(sparse_query, bias_terms),
+            _append_terms(dense_query, bias_terms[:2]),
+            subqueries,
+            "protected_span_bias",
+        )
+
+    if reason == "wrong_doc_scope":
+        return sparse_query, dense_query, subqueries, "doc_scope_retry"
+
+    if reason == "one_sided_comparison":
+        compare_topics = state.get("compare_topics") or {}
+        missing_topics = _comparison_missing_sides(
+            _to_evidence_items(state.get("evidence", [])),
+            compare_topics=compare_topics,
+            doc_ids=list(state.get("doc_ids") or []),
+        )
+        bias_terms: List[str] = []
+        for topic in missing_topics:
+            bias_terms.extend([topic, *_topic_doc_bias_tokens(topic)])
+        return (
+            _append_terms(sparse_query, bias_terms),
+            _append_terms(dense_query, bias_terms[:4]),
+            subqueries,
+            "comparison_balance_bias",
+        )
+
+    if reason == "insufficient_hits":
+        mode_hint = str(state.get("mode_hint") or plan.get("mode_hint") or "general")
+        if mode_hint == "definition":
+            return (
+                _append_terms(sparse_query, ["definition", "notation", "term"]),
+                _append_terms(dense_query, ["definition", "notation"]),
+                subqueries,
+                "definition_bias",
+            )
+        return (
+            _append_terms(sparse_query, ["section", "algorithm", "definition"]),
+            _append_terms(dense_query, ["standard", "guidance"]),
+            subqueries,
+            "coverage_bias",
+        )
+
+    return sparse_query, dense_query, subqueries, "no_change"
 
 
 def _refusal_message(refusal_reason: str) -> str:
     rr = (refusal_reason or "").lower()
-    if "anchor_missing" in rr:
+    if rr == "missing_protected_span":
         return (
             "I could not find citable evidence for the specific algorithm/table/section anchor "
             "in the indexed NIST documents."
         )
-    if "compare_doc_diversity_missing" in rr:
+    if rr == "wrong_doc_scope":
+        return "I could not find enough in-scope citable evidence in the requested NIST document set."
+    if rr == "one_sided_comparison":
         return (
             "I could not find enough citable evidence across both topics to produce a reliable comparison "
             "from the indexed NIST documents."
@@ -647,37 +918,17 @@ def node_route(state: AgentState) -> AgentState:
         add_trace(state, {"type": "loop_stop", "reason": state["stop_reason"]})
         return state
 
-    compare_topics = state.get("compare_topics") or {}
     canonical_query = str(state.get("canonical_query") or state["question"]).strip()
     mode_hint = str(state.get("mode_hint") or "general").strip() or "general"
-
-    if compare_topics.get("topic_a") and compare_topics.get("topic_b"):
-        plan = Plan(
-            action="compare",
-            reason="Comparison action selected from analyzed compare_topics.",
-            query=canonical_query,
-            args={
-                "topic_a": str(compare_topics["topic_a"]),
-                "topic_b": str(compare_topics["topic_b"]),
-            },
-            mode_hint="compare",
-        )
-    elif mode_hint == "definition":
-        plan = Plan(
-            action="resolve_definition",
-            reason="Definition action selected from analyzed mode_hint.",
-            query=canonical_query,
-            args={"term": canonical_query},
-            mode_hint="definition",
-        )
-    else:
-        plan = Plan(
+    set_plan(
+        state,
+        Plan(
             action="retrieve",
-            reason="Retrieve action selected from analyzed query state.",
+            reason="Retrieve action selected from analyzed planner state.",
             query=canonical_query,
             mode_hint=mode_hint,
-        )
-    set_plan(state, plan)
+        ),
+    )
     return state
 
 
@@ -701,9 +952,27 @@ def node_retrieve(state: AgentState) -> AgentState:
 
     plan = state.get("plan") or {}
     action = str(plan.get("action", "retrieve"))
+    plan_args = plan.get("args", {}) or {}
     mode_hint = str(plan.get("mode_hint") or state.get("mode_hint") or "general")
     requested_k = int(state.get("request_k") or DEFAULT_TOP_K)
-    doc_ids = list(state.get("doc_ids") or [])
+    doc_ids = list(plan_args.get("doc_ids") or state.get("doc_ids") or [])
+    sparse_query = str(
+        plan_args.get("sparse_query")
+        or state.get("sparse_query")
+        or plan.get("query")
+        or state.get("canonical_query")
+        or state["question"]
+    ).strip()
+    dense_query = str(
+        plan_args.get("dense_query")
+        or state.get("dense_query")
+        or plan.get("query")
+        or state.get("canonical_query")
+        or state["question"]
+    ).strip()
+    subqueries = list(plan_args.get("subqueries") or state.get("subqueries") or [])
+    protected_spans = list(plan_args.get("protected_spans") or state.get("protected_spans") or [])
+    canonical_query = str(plan.get("query") or state.get("canonical_query") or state["question"]).strip()
 
     state["tool_calls"] = int(state.get("tool_calls", 0)) + 1
     state["retrieval_round"] = int(state.get("retrieval_round", 0)) + 1
@@ -720,49 +989,28 @@ def node_retrieve(state: AgentState) -> AgentState:
 
     tool_out: Dict[str, Any]
     if action == "retrieve":
-        query = str(plan.get("query") or state.get("canonical_query") or state["question"])
         tool_out = lc_tools.retrieve.invoke(
             {
-                "query": query,
+                "query": canonical_query,
                 "k": requested_k,
                 "mode_hint": mode_hint,
                 "doc_ids": doc_ids or None,
-                "use_query_fusion": False,
-                "enable_mode_variants": False,
-            }
-        )
-    elif action == "resolve_definition":
-        args = plan.get("args", {}) or {}
-        tool_out = lc_tools.resolve_definition.invoke(
-            {
-                "term": args.get("term", state.get("canonical_query") or state["question"]),
-                "query": plan.get("query") or state.get("canonical_query") or state["question"],
-                "k": requested_k,
-                "doc_ids": doc_ids or None,
-                "use_query_fusion": False,
-                "enable_mode_variants": False,
-            }
-        )
-    elif action == "compare":
-        args = plan.get("args", {}) or {}
-        tool_out = lc_tools.compare.invoke(
-            {
-                "topic_a": args.get("topic_a", state["question"]),
-                "topic_b": args.get("topic_b", state["question"]),
-                "k": max(2, requested_k),
-                "doc_ids": doc_ids or None,
+                "canonical_query": canonical_query,
+                "sparse_query": sparse_query,
+                "dense_query": dense_query,
+                "subqueries": subqueries,
+                "protected_spans": protected_spans,
                 "use_query_fusion": False,
                 "enable_mode_variants": False,
             }
         )
     elif action == "summarize":
-        args = plan.get("args", {}) or {}
         tool_out = lc_tools.summarize.invoke(
             {
-                "doc_id": args["doc_id"],
-                "start_page": int(args["start_page"]),
-                "end_page": int(args["end_page"]),
-                "k": int(args.get("k", 30)),
+                "doc_id": plan_args["doc_id"],
+                "start_page": int(plan_args["start_page"]),
+                "end_page": int(plan_args["end_page"]),
+                "k": int(plan_args.get("k", 30)),
             }
         )
     else:
@@ -784,6 +1032,10 @@ def node_retrieve(state: AgentState) -> AgentState:
         "tool_stats": tool_out.get("stats", {}),
         "mode_hint": tool_out.get("mode_hint") or mode_hint,
         "doc_ids": doc_ids,
+        "sparse_query": sparse_query,
+        "dense_query": dense_query,
+        "subqueries": subqueries,
+        "protected_spans": protected_spans,
     }
     state["last_retrieval_stats"] = stats
     add_trace(state, {"type": "retrieval_round_result", **stats})
@@ -794,19 +1046,27 @@ def node_assess_evidence(state: AgentState) -> AgentState:
     _bump_step(state, "assess_evidence")
 
     evidence = _to_evidence_items(state.get("evidence", []))
-    anchors = list(state.get("required_anchors") or [])
-    anchor_match = _evidence_contains_any_anchor(evidence, anchors)
+    protected_spans = list(state.get("protected_spans") or [])
+    missing_protected_spans = _missing_protected_spans(evidence, protected_spans)
     compare_topics = state.get("compare_topics") or {}
     compare_required = bool(compare_topics.get("topic_a") and compare_topics.get("topic_b"))
+    doc_ids = list(state.get("doc_ids") or [])
+    missing_compare_topics = _comparison_missing_sides(
+        evidence,
+        compare_topics=compare_topics,
+        doc_ids=doc_ids,
+    )
     doc_diversity = _doc_diversity(evidence)
 
     reasons: List[str] = []
+    if doc_ids and not evidence:
+        reasons.append("wrong_doc_scope")
+    if missing_protected_spans:
+        reasons.append("missing_protected_span")
+    if compare_required and missing_compare_topics:
+        reasons.append("one_sided_comparison")
     if len(evidence) < MIN_EVIDENCE_HITS:
         reasons.append("insufficient_hits")
-    if anchors and not anchor_match:
-        reasons.append("anchor_missing")
-    if compare_required and doc_diversity < 2:
-        reasons.append("compare_doc_diversity_missing")
 
     sufficient = len(reasons) == 0
     state["evidence_sufficient"] = sufficient
@@ -830,8 +1090,10 @@ def node_assess_evidence(state: AgentState) -> AgentState:
             "budget_reason": budget_reason,
             "evidence_hits": len(evidence),
             "doc_diversity": doc_diversity,
-            "anchors": anchors,
-            "anchor_match": anchor_match,
+            "doc_ids": doc_ids,
+            "protected_spans": protected_spans,
+            "missing_protected_spans": missing_protected_spans,
+            "missing_compare_topics": missing_compare_topics,
             "tool_calls": state.get("tool_calls", 0),
             "steps": state.get("steps", 0),
             "retrieval_round": state.get("retrieval_round", 0),
@@ -849,19 +1111,26 @@ def node_refine_query(state: AgentState) -> AgentState:
         return state
 
     previous_plan = state.get("plan") or {}
-    previous_query = str(previous_plan.get("query") or state.get("canonical_query") or state["question"])
-    refined_query, strategy = _build_refined_query(state)
+    previous_query = str(previous_plan.get("query") or state.get("canonical_query") or state["question"]).strip()
+    previous_args = previous_plan.get("args", {}) or {}
+    previous_sparse = str(previous_args.get("sparse_query") or state.get("sparse_query") or previous_query).strip()
+    previous_dense = str(previous_args.get("dense_query") or state.get("dense_query") or previous_query).strip()
+    refined_sparse, refined_dense, refined_subqueries, strategy = _build_refined_queries(state)
     mode_hint = str(state.get("mode_hint") or previous_plan.get("mode_hint") or "general")
-    next_action = "resolve_definition" if str(previous_plan.get("action")) == "resolve_definition" else "retrieve"
-    next_args = {"term": state.get("canonical_query") or refined_query} if next_action == "resolve_definition" else {}
 
     set_plan(
         state,
         Plan(
-            action=next_action,
+            action="retrieve",
             reason=f"Refined retrieval query via {strategy}.",
-            query=refined_query,
-            args=next_args,
+            query=refined_sparse,
+            args={
+                "sparse_query": refined_sparse,
+                "dense_query": refined_dense,
+                "subqueries": refined_subqueries,
+                "protected_spans": list(state.get("protected_spans") or []),
+                "doc_ids": list(state.get("doc_ids") or []),
+            },
             mode_hint=mode_hint,
         ),
     )
@@ -871,7 +1140,12 @@ def node_refine_query(state: AgentState) -> AgentState:
             "type": "query_refined",
             "strategy": strategy,
             "previous_query": previous_query,
-            "refined_query": refined_query,
+            "refined_query": refined_sparse,
+            "previous_sparse_query": previous_sparse,
+            "previous_dense_query": previous_dense,
+            "refined_sparse_query": refined_sparse,
+            "refined_dense_query": refined_dense,
+            "refined_subqueries": refined_subqueries,
         },
     )
     return state

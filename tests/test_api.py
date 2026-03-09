@@ -108,6 +108,53 @@ def test_service_maps_backend_error(monkeypatch):
     assert payload["refusal_reason"] == "backend_error"
 
 
+def test_service_ask_agent_maps_state(monkeypatch):
+    monkeypatch.setattr(
+        service_module,
+        "run_agent",
+        lambda question, k=None: {
+            "question": question,
+            "original_query": question,
+            "canonical_query": "ML-KEM",
+            "mode_hint": "definition",
+            "required_anchors": [],
+            "compare_topics": None,
+            "doc_ids": ["NIST.FIPS.203"],
+            "doc_family": "FIPS 203",
+            "analysis_notes": "test",
+            "answer_prompt_question": question,
+            "final_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
+            "draft_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
+            "citations": [
+                {
+                    "key": "c1",
+                    "doc_id": "NIST.FIPS.203",
+                    "start_page": 3,
+                    "end_page": 3,
+                    "chunk_id": "NIST.FIPS.203::p0003::c000",
+                }
+            ],
+            "refusal_reason": "",
+            "trace": [{"type": "step", "node": "analyze_query"}],
+            "plan": {"action": "resolve_definition"},
+            "steps": 5,
+            "retrieval_round": 1,
+            "tool_calls": 1,
+            "stop_reason": "sufficient_evidence",
+            "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 3.0, "total": 7.0},
+            "evidence": [{"chunk_id": "c1"}],
+        },
+    )
+
+    payload = service_module.ask_agent_question("What is ML-KEM?", k=3)
+
+    assert payload["analysis"]["canonical_query"] == "ML-KEM"
+    assert payload["analysis"]["doc_ids"] == ["NIST.FIPS.203"]
+    assert payload["trace_summary"]["entry_node"] == "analyze_query"
+    assert payload["timing_ms"]["analyze"] == 1.0
+    assert payload["timing_ms"]["total"] == 7.0
+
+
 def test_health_endpoint(monkeypatch):
     monkeypatch.setattr(
         "api.main.health_status",
@@ -201,3 +248,84 @@ def test_ask_endpoint(monkeypatch):
     assert payload["citations"][0]["doc_id"] == "NIST.FIPS.203"
     assert payload["trace_summary"]["llm_backend"] == "ollama"
     assert payload["timing_ms"]["generate"] == 12.0
+
+
+def test_ask_agent_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "api.main.ask_agent_question",
+        lambda question, k=None: {
+            "answer": "ML-KEM is a key-encapsulation mechanism [c1].",
+            "citations": [
+                {
+                    "key": "c1",
+                    "doc_id": "NIST.FIPS.203",
+                    "start_page": 3,
+                    "end_page": 3,
+                    "chunk_id": "NIST.FIPS.203::p0003::c000",
+                }
+            ],
+            "refusal_reason": None,
+            "trace_summary": {
+                "entry_node": "analyze_query",
+                "mode_hint": "definition",
+                "canonical_query": "ML-KEM",
+            },
+            "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 12.0, "total": 15.0},
+            "analysis": {
+                "original_query": question,
+                "canonical_query": "ML-KEM",
+                "mode_hint": "definition",
+                "required_anchors": [],
+                "compare_topics": None,
+                "doc_ids": ["NIST.FIPS.203"],
+                "doc_family": "FIPS 203",
+                "analysis_notes": "test",
+                "answer_prompt_question": question,
+            },
+        },
+    )
+
+    response = client.post("/ask-agent", json={"question": "What is ML-KEM?", "k": 3})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"].startswith("ML-KEM")
+    assert payload["analysis"]["canonical_query"] == "ML-KEM"
+    assert payload["trace_summary"]["entry_node"] == "analyze_query"
+    assert payload["timing_ms"]["analyze"] == 1.0
+
+
+def test_ask_agent_endpoint_refusal(monkeypatch):
+    monkeypatch.setattr(
+        "api.main.ask_agent_question",
+        lambda question, k=None: {
+            "answer": "I do not have enough citable evidence in the indexed NIST documents to answer that reliably.",
+            "citations": [],
+            "refusal_reason": "insufficient_evidence",
+            "trace_summary": {
+                "entry_node": "analyze_query",
+                "mode_hint": "general",
+                "canonical_query": question,
+            },
+            "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 0.0, "total": 3.5},
+            "analysis": {
+                "original_query": question,
+                "canonical_query": question,
+                "mode_hint": "general",
+                "required_anchors": [],
+                "compare_topics": None,
+                "doc_ids": [],
+                "doc_family": "",
+                "analysis_notes": "test",
+                "answer_prompt_question": question,
+            },
+        },
+    )
+
+    response = client.post("/ask-agent", json={"question": "What does NIST say about PQC for WiFi 9?"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["refusal_reason"] == "insufficient_evidence"
+    assert payload["analysis"]["mode_hint"] == "general"
+    assert payload["citations"] == []

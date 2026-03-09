@@ -8,18 +8,35 @@ from rag.lc import tools as t
 # Utilities for stubs
 # ----------------------------
 
-def _stub_retriever(query: str, k: int = 8, mode_hint=None, filters=None):
+def _stub_retriever(
+    query: str,
+    k: int = 8,
+    mode_hint=None,
+    filters=None,
+    doc_ids=None,
+    use_query_fusion=True,
+    enable_mode_variants=True,
+):
     # Mimic your retriever returning ChunkHit-like dicts
+    filters = dict(filters or {})
+    if doc_ids:
+        filters["doc_ids"] = list(doc_ids)
+    resolved_doc_id = (filters.get("doc_ids") or [filters.get("doc_id") or "NIST.FIPS.203"])[0]
     out = []
     for i in range(k):
-        out.append({
-            "score": 1.0 - i * 0.01,
-            "chunk_id": f"c{i}",
-            "doc_id": filters.get("doc_id", "NIST.FIPS.203") if filters else "NIST.FIPS.203",
-            "start_page": 10 + i,
-            "end_page": 10 + i,
-            "text": f"Chunk {i} for {query} (mode={mode_hint})"
-        })
+        out.append(
+            {
+                "score": 1.0 - i * 0.01,
+                "chunk_id": f"c{i}",
+                "doc_id": resolved_doc_id,
+                "start_page": 10 + i,
+                "end_page": 10 + i,
+                "text": (
+                    f"Chunk {i} for {query} (mode={mode_hint}) "
+                    f"(fusion={use_query_fusion}) (variants={enable_mode_variants})"
+                ),
+            }
+        )
     return out
 
 
@@ -57,8 +74,8 @@ def test_retrieve_tool_smoke(monkeypatch):
 def test_retrieve_tool_with_doc_filter(monkeypatch):
     monkeypatch.setattr(t, "_find_retrieve_entrypoint", lambda: _stub_retriever)
 
-    res = t.retrieve.invoke({"query": "Algorithm 2 SHAKE128", "k": 2, "doc_id": "NIST.FIPS.205"})
-    assert res["filters"]["doc_id"] == "NIST.FIPS.205"
+    res = t.retrieve.invoke({"query": "Algorithm 2 SHAKE128", "k": 2, "doc_ids": ["NIST.FIPS.205"]})
+    assert res["filters"]["doc_ids"] == ["NIST.FIPS.205"]
     assert all(e["doc_id"] == "NIST.FIPS.205" for e in res["evidence"])
 
 
@@ -71,17 +88,57 @@ def test_resolve_definition_query(monkeypatch):
     assert len(res["evidence"]) == 2
 
 
+def test_retrieve_tool_disables_fusion_and_mode_variants(monkeypatch):
+    monkeypatch.setattr(t, "_find_retrieve_entrypoint", lambda: _stub_retriever)
+
+    res = t.retrieve.invoke(
+        {
+            "query": "What is ML-KEM?",
+            "k": 1,
+            "mode_hint": "definition",
+            "doc_ids": ["NIST.FIPS.203"],
+            "use_query_fusion": False,
+            "enable_mode_variants": False,
+        }
+    )
+
+    assert res["mode_hint"] == "definition"
+    assert res["filters"]["doc_ids"] == ["NIST.FIPS.203"]
+    assert "(fusion=False)" in res["evidence"][0]["text"]
+    assert "(variants=False)" in res["evidence"][0]["text"]
+
+
 def test_compare_merges_and_dedupes(monkeypatch):
     # Patch _run_retrieve directly to avoid dealing with mode_hint heuristics
-    def fake_run(query: str, k: int = 6, mode_hint=None, filters=None):
+    def fake_run(
+        query: str,
+        k: int = 6,
+        mode_hint=None,
+        doc_ids=None,
+        use_query_fusion=True,
+        enable_mode_variants=True,
+    ):
         # topic_a returns c0,c1 ; topic_b returns c1,c2 -> dedupe should remove one c1
+        assert mode_hint == "compare"
+        assert doc_ids == ["NIST.FIPS.203", "NIST.FIPS.204"]
+        assert use_query_fusion is False
+        assert enable_mode_variants is False
         if "topicA" in query:
             return [_e("c0"), _e("c1")]
         return [_e("c1"), _e("c2")]
 
     monkeypatch.setattr(t, "_run_retrieve", fake_run)
 
-    res = t.compare.invoke({"topic_a": "topicA", "topic_b": "topicB", "k": 2})
+    res = t.compare.invoke(
+        {
+            "topic_a": "topicA",
+            "topic_b": "topicB",
+            "k": 2,
+            "doc_ids": ["NIST.FIPS.203", "NIST.FIPS.204"],
+            "use_query_fusion": False,
+            "enable_mode_variants": False,
+        }
+    )
     chunk_ids = [e["chunk_id"] for e in res["evidence"]]
     assert set(chunk_ids) == {"c0", "c1", "c2"}
     assert res["stats"]["n_merged"] == 3

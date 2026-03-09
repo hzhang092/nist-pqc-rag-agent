@@ -32,11 +32,12 @@ def test_retrieve_for_eval_returns_dicts_and_maps_eval_knobs(monkeypatch):
         rerank_pool: int,
         diagnostic_pre_rerank_depth: int,
         mode_hint=None,
+        doc_ids=None,
         enable_mode_variants=True,
         faiss=None,
         bm25=None,
     ):
-        _ = (faiss, bm25)
+        _ = (faiss, bm25, doc_ids)
         captured.update(
             {
                 "query": query,
@@ -116,6 +117,7 @@ def test_retrieve_for_eval_preserves_retrieval_order(monkeypatch):
         rerank_pool: int,
         diagnostic_pre_rerank_depth: int,
         mode_hint=None,
+        doc_ids=None,
         enable_mode_variants=True,
         faiss=None,
         bm25=None,
@@ -130,6 +132,7 @@ def test_retrieve_for_eval_preserves_retrieval_order(monkeypatch):
             rerank_pool,
             diagnostic_pre_rerank_depth,
             mode_hint,
+            doc_ids,
             enable_mode_variants,
             faiss,
             bm25,
@@ -164,6 +167,7 @@ def test_retrieve_for_eval_with_stages_returns_stage_rows(monkeypatch):
         rerank_pool: int,
         diagnostic_pre_rerank_depth: int,
         mode_hint=None,
+        doc_ids=None,
         enable_mode_variants=True,
         faiss=None,
         bm25=None,
@@ -178,6 +182,7 @@ def test_retrieve_for_eval_with_stages_returns_stage_rows(monkeypatch):
             rerank_pool,
             diagnostic_pre_rerank_depth,
             mode_hint,
+            doc_ids,
             enable_mode_variants,
             faiss,
             bm25,

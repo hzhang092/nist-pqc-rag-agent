@@ -1,0 +1,360 @@
+{
+  "question": "What are the differences between ML-KEM and ML-DSA?",
+  "original_query": "What are the differences between ML-KEM and ML-DSA?",
+  "canonical_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+  "mode_hint": "compare",
+  "required_anchors": [
+    "ML-KEM",
+    "ML-DSA"
+  ],
+  "compare_topics": {
+    "topic_a": "ML-KEM",
+    "topic_b": "ML-DSA"
+  },
+  "doc_ids": [
+    "NIST.FIPS.203",
+    "NIST.FIPS.204"
+  ],
+  "doc_family": "",
+  "analysis_notes": "deterministic-fallback",
+  "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?",
+  "query_analysis": {
+    "original_query": "What are the differences between ML-KEM and ML-DSA?",
+    "canonical_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+    "mode_hint": "compare",
+    "required_anchors": [
+      "ML-KEM",
+      "ML-DSA"
+    ],
+    "compare_topics": {
+      "topic_a": "ML-KEM",
+      "topic_b": "ML-DSA"
+    },
+    "doc_ids": [
+      "NIST.FIPS.203",
+      "NIST.FIPS.204"
+    ],
+    "doc_family": null,
+    "analysis_notes": "deterministic-fallback"
+  },
+  "request_k": 0,
+  "plan": {
+    "action": "compare",
+    "reason": "Comparison action selected from analyzed compare_topics.",
+    "query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+    "args": {
+      "topic_a": "ML-KEM",
+      "topic_b": "ML-DSA"
+    },
+    "mode_hint": "compare"
+  },
+  "evidence": [
+    {
+      "score": 0.030776515151515152,
+      "chunk_id": "NIST.FIPS.203::p0010::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "text": "1. Introduction\n\n1.1 Purpose and Scope\n\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM). A key-encapsulation mechanism (KEM) is a set of algorithms that can be used to establish a shared secret key between two parties communicating over a public channel. A KEM is a particular type of key establishment scheme. Other NISTapproved key establishment schemes are specified in NIST Special Publication (SP) 800-56A, Recommendation for Pair-Wise Key-Establishment Schemes Using Discrete Logarithm-Based Cryptography [2], and SP 800-56B, Recommendation for Pair-Wise Key Establishment Schemes Using Integer Factorization Cryptography [3].\n\nThe key establishment schemes specified in SP 800-56A and SP 800-56B are vulnerable to attacks that use sufficiently-capable qua…(truncated)"
+    },
+    {
+      "score": 0.030621785881252923,
+      "chunk_id": "NIST.FIPS.203::p0022::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 22,
+      "end_page": 22,
+      "text": "3.2 The ML-KEM Scheme\n\nML-KEM is a key-encapsulation mechanism based on CRYSTALS-KYBER [4], a scheme that was initially described in [8]. The following is a brief and informal description of the computational assumption underlying ML-KEM and how the ML-KEM scheme is constructed.\n\nThe computational assumption. The security of ML-KEM is based on the presumed hardness of the so-called Module Learning with Errors (MLWE) problem [9], which is a generalization of the Learning With Errors (LWE) problem introduced by Regev in 2005 [10]. The hardness of the MLWE problem is itself based on the presumed hardness of certain computational problems in module lattices [9]. This motivates the name of the scheme ML-KEM."
+    },
+    {
+      "score": 0.029709507042253523,
+      "chunk_id": "NIST.FIPS.203::p0026::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 26,
+      "end_page": 26,
+      "text": "the algorithm terminating.\n\nThere are two exceptions to this rule:\n\nThe seed (𝑑,𝑧) generated in steps 1 and 2 of ML-KEM.KeyGen can be stored for later expansion using ML-KEM.KeyGen_internal.As this seed can be used to compute the decapsulation key, it is sensitive data and shall be treated with the same safeguards as a decapsulation key (see SP 800-227 [1]).\nThe matrix 𝐀 ̂ generated in steps 3-7 of K-PKE.KeyGen (as a subroutine of ML-KEM.KeyGen ) can be stored so that it need not be recomputed in later operations (e.g., ML-KEM.Decaps ). The same matrix 𝐀 ̂ is also generated in steps 4-8 of K-PKE.Encrypt (as a subroutine of ML-KEM.Encaps or ML-KEM.Decaps ); it can also then be stored. In either case, the matrix 𝐀 ̂ is data that is easily computed from the public encapsulation key and thus d…(truncated)"
+    },
+    {
+      "score": 0.028814262023217248,
+      "chunk_id": "NIST.FIPS.203::p0041::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 41,
+      "end_page": 41,
+      "text": "6. Main Internal Algorithms\n\nThis section specifies three algorithms: ML-KEM.KeyGen_internal , ML-KEM.Encaps_internal , and ML-KEM.Decaps_internal.These three algorithms are all deterministic , meaning that their output is completely determined by their input. No randomness is sampled inside of these algorithms. These three algorithms will be used to construct ML-KEM in Section 7. The algorithms in this section make use of the parameters 𝑛 , 𝑞 , 𝑘 , 𝑑 𝑢 , and 𝑑 𝑣 . The subroutines they invoke additionally make use of the parameters 𝜂 1 and 𝜂 2 . While 𝑛 is always 256 and 𝑞 is always 3329 , the remaining parameters vary among the possible parameter sets (see Section 8).\n\nThe interfaces specified in this section will be used to test ML-KEM implementations through the Cryptographic Algorithm …(truncated)"
+    },
+    {
+      "score": 0.027526395173453996,
+      "chunk_id": "NIST.FIPS.203::p0046::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 46,
+      "end_page": 46,
+      "text": "7.3 ML-KEM Decapsulation\n\nThe decapsulation algorithm ML-KEM.Decaps of ML-KEM (Algorithm 21) accepts a decapsulation key and an ML-KEM ciphertext as input, does not use any randomness, and outputs a shared secret. This algorithm requires input checking, as specified below.\n\nDecapsulation input check. To check a candidate decapsulation key dk and ciphertext 𝑐 , perform the following checks:\n\n(Ciphertext type check) If 𝑐 is not a byte array of length 32(𝑑 𝑢 𝑘 + 𝑑 𝑣 ) for the values of 𝑑 𝑢 , 𝑑 𝑣 , and 𝑘 specified by the relevant parameter set, then input checking has failed.\n(Decapsulation key type check) If dk is not a byte array of length 768𝑘 + 96 for the value of 𝑘 specified by the relevant parameter set, then input checking has failed.\n(Hash check) Perform the computation\n\n$$\\text {test}…(truncated)"
+    },
+    {
+      "score": 0.01639344262295082,
+      "chunk_id": "NIST.FIPS.203::p0010::c001",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "text": "The key establishment schemes specified in SP 800-56A and SP 800-56B are vulnerable to attacks that use sufficiently-capable quantum computers. ML-KEM is an approved alternative that is presently believed to be secure, even against adversaries in possession of a large-scale fault-tolerant quantum computer. ML-KEM is derived from the round-three version of the CRYSTALS-KYBER KEM [4], a submission in the NIST Post-Quantum Cryptography Standardization project. For the differences between ML-KEM and CRYSTALS-KYBER, see Appendix C.\n\nThis standard specifies the algorithms and parameter sets of the ML-KEM scheme. It aims to provide sufficient information to implement ML-KEM in a manner that can pass validation (see https://csrc.nist.gov/projects/cryptographic-module-validation-program). For gener…(truncated)"
+    },
+    {
+      "score": 0.016129032258064516,
+      "chunk_id": "NIST.FIPS.203::p0023::c000",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 23,
+      "end_page": 23,
+      "text": "The specification of the ML-KEM algorithms in this standard will follow the same pattern. Specifically, this standard will fi rst describe a public-key encryption scheme called K-PKE (in Section 5) and then use the algorithms of K-PKE as subroutines when describing the algorithms of ML-KEM (in Sections 6 and 7). The cryptographic transformation from K-PKE to ML-KEM is crucial for achieving IND-CCA2 security. The scheme K-PKE is not IND-CCA2-secure and shall not be used as a stand-alone scheme (see Section 3.3).\n\nA notable feature of ML-KEM is the use of the number-theoretic transform (NTT). The NTT converts a polynomial 𝑓 ∈ 𝑅𝑞 to an alternative representation as a vector 𝑓 of linear polynomials. Working with NTT representations enables significantly faster multiplication of polynomials. Ot…(truncated)"
+    },
+    {
+      "score": 0.015873015873015872,
+      "chunk_id": "NIST.FIPS.203::p0022::c004",
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 22,
+      "end_page": 22,
+      "text": "The MLWE problem is similar to the LWE problem. An important difference is that, in MLWE, ℤ 𝑛 𝑞 is replaced by a certain module 𝑅𝑞 𝑘 , which is constructed by taking the 𝑘 -fold Cartesian product of a certain polynomial ring 𝑅𝑞 . In particular, the secret in the MLWE problem is an element 𝐱 of the module 𝑅𝑞 𝑘 . The ring 𝑅𝑞 is discussed in detail in Section 4.3.\n\nThe ML-KEM construction. At a high level, the construction of the scheme ML-KEM proceeds in two steps. First, the ideas discussed previously are used to construct a public-key encryption (PKE) scheme from the MLWE problem. Second, this PKE scheme is converted into a key-encapsulation mechanism using the so-called Fujisaki-Okamoto (FO) transform [11, 12]. Due to certain properties of the FO transform, the resulting KEM provides secu…(truncated)"
+    },
+    {
+      "score": 0.03131881575727918,
+      "chunk_id": "NIST.FIPS.204::p0007::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 7,
+      "end_page": 7,
+      "text": "2.3 | Mathematical Symbols . . . . . . . . | . . . . | 5\n2.4 | Notation . . . . . . . . . . . . . . . . . . . . . . . . | Notation . . . . . . . . . . . . . . . . . . . . . . . . | 7\n2.4.1 | Rings . . . . . . . . . . . . . . . . . | 7\n2.4.2 | Vectors and Matrices . . . . . . . . . | 7\n2.5 | NTT Representation . . . | . . . . . . . . . . . | 8\n3 Overview of the ML-DSA Signature Scheme | 3 Overview of the ML-DSA Signature Scheme | 3 Overview of the ML-DSA Signature Scheme | 3 Overview of the ML-DSA Signature Scheme | 9\n3.1 | Security Properties . . . . . . . . | . . . . . . | 9\n3.2 | Computational Assumptions . . . . . . . . | . | 9\n3.3 | ML-DSA Construction . . . | . . . . . . . . . . | 9\n3.4 | Hedged and Deterministic Signing . . . . . . | Hedged and Deterministic Signing . . . . . . | 11\n…(truncated)"
+    },
+    {
+      "score": 0.031754032258064516,
+      "chunk_id": "NIST.FIPS.204::p0020::c003",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 20,
+      "end_page": 20,
+      "text": "In the ML-DSA standard, a number of tweaks and modifications are added to this basic framework for security or efficiency reasons:\n\nTo reduce key and signature size and to use fast NTT-based polynomial multiplication, ML-DSA uses module-structured matrices. Relative to the basic scheme described above, it replaces dimension𝑛 × 𝑛 blocks of matrices and dimension𝑛 blocks of vectors with polynomials in the ring , 𝐒1 ∈ ℤ 𝐿×𝑛 , 𝐒𝟐 ∈ ℤ 𝐾×𝑛 𝑅𝑞 . Thus, instead of 𝐀 ∈ ℤ𝑞 𝐾×𝐿 , 𝐓 ∈ ℤ𝑞 𝐾×𝑛 𝑞 𝑞 , 𝐲 ∈ ℤ 𝐿 𝑞 , 𝐜 ∈ ℤ𝑞 𝑛 , ML-DSA has 𝐀 ∈ 𝑅𝑞 𝑘×ℓ , 𝐭 ∈ 𝑅𝑞 𝑘 , 𝐬 1 ∈ 𝑅𝑞 ℓ , 𝐬 2 ∈ 𝑅𝑞 𝑘 , 𝐲 ∈ 𝑅𝑞 ℓ , 𝑐 ∈ 𝑅𝑞 , where ℓ = 𝐿/𝑛 and 𝑘 = 𝐾/𝑛 .\nTo further reduce the size of the public key, the matrix 𝐀 is pseudorandomly derived from a 256-bit public seed 𝜌 , which is included in the ML-DSA public key in place of 𝐀 .\nFor…(truncated)"
+    },
+    {
+      "score": 0.03177805800756621,
+      "chunk_id": "NIST.FIPS.204::p0019::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 19,
+      "end_page": 19,
+      "text": "3.1 Security Properties\n\nML-DSA is designed to be strongly existentially unforgeable under chosen message attack (SUF-CMA). That is, it is expected that even if an adversary can get the honest party to sign arbitrary messages, the adversary cannot create any additional valid signatures based on the signer's public key, including on messages for which the signer has already provided a signature.\n\nBeyond unforgeability, ML-DSA is designed to satisfy additional security properties described in [14]."
+    },
+    {
+      "score": 0.02928692699490662,
+      "chunk_id": "NIST.FIPS.204::p0029::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 29,
+      "end_page": 29,
+      "text": "the platform may require hardware support for hashing to achieve acceptable performance but lack hardware support for SHAKE256 specifically. For some use cases, this may be addressed by signing a digest of the message along with some domain separation information rather than signing the message directly. This version of ML-DSA is known as 'pre-hash' ML-DSA or HashML-DSA.In general, the 'pure' ML-DSA version is preferred.\n\nWhile key generation for HashML-DSA is the same as for ML-DSA, it is not the same for the signing algorithm HashML-DSA.Sign or the verification algorithm HashML-DSA.Verify . Like ML-DSA, the signing algorithm of HashML-DSA takes the content to be signed, the private key, and a context as input, as well as a hash function or XOF that is to be used to pre-hash the content t…(truncated)"
+    },
+    {
+      "score": 0.02862400327131466,
+      "chunk_id": "NIST.FIPS.204::p0022::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 22,
+      "end_page": 22,
+      "text": "3.6.2 Public-Key and Signature Length Checks\n\nAlgorithm 3, implementing verification for ML-DSA, and Algorithm 5, implementing verification for HashMLDSA, specify the length of the signature 𝜎 and the public key 𝑝𝑘 in terms of the parameters described in Table 1. If an implementation of ML-DSA can accept inputs for 𝜎 or 𝑝𝑘 of any other length, it shall return false whenever the lengths of either of these inputs differ from their lengths specified in this standard. Failing to check the length of 𝑝𝑘 or 𝜎 may interfere with the security properties that ML-DSA is designed to have, like strong unforgeability."
+    },
+    {
+      "score": 0.027479766610201392,
+      "chunk_id": "NIST.FIPS.204::p0064::c003",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "text": "D.3 Changes From FIPS 204 Initial Public Draft\n\nIn the fi nal version of the ML-DSA standard, the omitted malformed input check was restored to the hint unpacking algorithm (Algorithm 21). Additionally, in the fi nal version of ML-DSA, all of the bits of 𝑐 are used in the generation of 𝑐 (Algorithm 29), and ExpandMask (Algorithm 34) is modified to take output bits from the beginning of the output of H.\n\ñ\n\nBased on comments that were submitted on the draft version, more details were provided for the pre-hash version HashML-DSA in Section 5.4. These modifications include domain separation for the cases in which the message is signed directly and cases in which a digest of the message is signed. The changes were made by explicitly defining external functions for both versions of the signing …(truncated)"
+    },
+    {
+      "score": 0.027212143650499815,
+      "chunk_id": "NIST.FIPS.204::p0008::c001",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 8,
+      "end_page": 8,
+      "text": "5.4 Pre-Hash ML-DSA | . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . | 18\n5.4.1 HashML-DSA Signing and Verifying Internal Functions | 5.4.1 HashML-DSA Signing and Verifying Internal Functions | 5.4.1 HashML-DSA Signing and Verifying Internal Functions\n22\n6.1 ML-DSA Key Generation (Internal) . . . . . . . . . . . . . . | 6.1 ML-DSA Key Generation (Internal) . . . . . . . . . . . . . . | . . . . . . . . . . . . | 22\n6.2 ML-DSA Signing (Internal) . . 6.3 ML-DSA Verifying (Internal) . | 6.2 ML-DSA Signing (Internal) . . 6.3 ML-DSA Verifying (Internal) . | 6.2 ML-DSA Signing (Internal) . . 6.3 ML-DSA Verifying (Internal) .\nAuxiliary Functions | Auxiliary Functions | Auxiliary Functions | 28\n7.1 Conversion Between Data Types . . . . . . . . . . . . . . . . . . . . . . . . …(truncated)"
+    },
+    {
+      "score": 0.015873015873015872,
+      "chunk_id": "NIST.FIPS.204::p0032::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 32,
+      "end_page": 32,
+      "text": "The vector 𝐭 together with the matrix 𝐀 may be considered an expanded form of the public key. The vector 𝐭 is compressed in the actual public key by dropping the 𝑑 least significant bits from each coefficient, thus producing the polynomial vector 𝐭 1 . This compression is an optimization for performance, not security. The low-order bits of 𝐭 can be reconstructed from a small number of signatures and, therefore, need not be regarded as secret.\n\nThe ML-DSA public key 𝑝𝑘 is a byte encoding of the public random seed 𝜌 and the compressed polynomial vector 𝐭 1 .\n\nThe ML-DSA private key 𝑠𝑘 is a byte encoding of the public random seed 𝜌 , a private random seed 𝐾 for use during signing, a 64-byte hash 𝑡𝑟 of the public key for use during signing, the secret polynomial\n\n7 In some cases, it is permiss…(truncated)"
+    }
+  ],
+  "draft_answer": "- ML-KEM: Introduction\n\n1.1 Purpose and Scope\n\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM) [c1].\n- ML-DSA: 3.1 Security Properties\n\nML-DSA is designed to be strongly existentially unforgeable under chosen message attack (SUF-CMA) [c2].\n- These statements provide citable evidence for a side-by-side comparison [c1][c2].",
+  "final_answer": "- ML-KEM: Introduction\n\n1.1 Purpose and Scope\n\nThis standard specifies the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM) [c1].\n- ML-DSA: 3.1 Security Properties\n\nML-DSA is designed to be strongly existentially unforgeable under chosen message attack (SUF-CMA) [c2].\n- These statements provide citable evidence for a side-by-side comparison [c1][c2].",
+  "citations": [
+    {
+      "doc_id": "NIST.FIPS.203",
+      "start_page": 10,
+      "end_page": 10,
+      "chunk_id": "NIST.FIPS.203::p0010::c000",
+      "key": "c1"
+    },
+    {
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 19,
+      "end_page": 19,
+      "chunk_id": "NIST.FIPS.204::p0019::c001",
+      "key": "c2"
+    }
+  ],
+  "tool_calls": 1,
+  "steps": 6,
+  "retrieval_round": 1,
+  "trace": [
+    {
+      "type": "step",
+      "node": "analyze_query",
+      "steps": 1,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "analysis",
+      "original_query": "What are the differences between ML-KEM and ML-DSA?",
+      "canonical_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+      "mode_hint": "compare",
+      "required_anchors": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "compare_topics": {
+        "topic_a": "ML-KEM",
+        "topic_b": "ML-DSA"
+      },
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "doc_family": null,
+      "analysis_notes": "deterministic-fallback"
+    },
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 2,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "plan",
+      "action": "compare",
+      "reason": "Comparison action selected from analyzed compare_topics.",
+      "query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+      "args": {
+        "topic_a": "ML-KEM",
+        "topic_b": "ML-DSA"
+      },
+      "mode_hint": "compare"
+    },
+    {
+      "type": "step",
+      "node": "retrieve",
+      "steps": 3,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "retrieval_round_started",
+      "round": 1,
+      "action": "compare",
+      "tool_calls": 1
+    },
+    {
+      "type": "evidence",
+      "n": 16
+    },
+    {
+      "type": "retrieval_round_result",
+      "round": 1,
+      "action": "compare",
+      "new_hits": 16,
+      "total_hits": 16,
+      "tool_stats": {
+        "n_a": 8,
+        "n_b": 8,
+        "n_merged": 16
+      },
+      "mode_hint": "compare",
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ]
+    },
+    {
+      "type": "step",
+      "node": "assess_evidence",
+      "steps": 4,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "assessment_decision",
+      "sufficient": true,
+      "reasons": [],
+      "budget_reason": null,
+      "evidence_hits": 16,
+      "doc_diversity": 2,
+      "anchors": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "anchor_match": true,
+      "tool_calls": 1,
+      "steps": 4,
+      "retrieval_round": 1
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 5,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "answer",
+      "citations": 2
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 6,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "final_answer"
+    },
+    {
+      "type": "verify",
+      "result": "ok",
+      "stop_reason": "sufficient_evidence",
+      "refusal_reason": "",
+      "citations": 2
+    }
+  ],
+  "errors": [],
+  "evidence_sufficient": true,
+  "stop_reason": "sufficient_evidence",
+  "refusal_reason": "",
+  "last_retrieval_stats": {
+    "round": 1,
+    "action": "compare",
+    "new_hits": 16,
+    "total_hits": 16,
+    "tool_stats": {
+      "n_a": 8,
+      "n_b": 8,
+      "n_merged": 16
+    },
+    "mode_hint": "compare",
+    "doc_ids": [
+      "NIST.FIPS.203",
+      "NIST.FIPS.204"
+    ]
+  },
+  "timing_ms": {
+    "analyze": 10629.382,
+    "retrieve": 9712.997,
+    "generate": 5768.16,
+    "total": 26114.464
+  }
+}

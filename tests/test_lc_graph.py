@@ -1,37 +1,104 @@
-"""
-Unit tests for the `graph` module in the `rag.lc` package.
+from __future__ import annotations
 
-These tests validate the behavior of the bounded retrieve-assess-refine agent, ensuring that routing, evidence handling, and stopping conditions work as expected.
-
-Tests:
-- `test_heuristic_route_parses_differences_between`: Verifies that the `_heuristic_route` function correctly identifies a comparison query and extracts the topics for comparison.
-- `test_heuristic_route_ambiguous_compare_falls_back_to_retrieve`: Ensures that ambiguous comparison queries default to the `retrieve` action.
-- `test_node_answer_preserves_citation_key`: Tests that the `node_answer` function preserves the citation key in the output. Uses monkeypatching to mock the `_call_rag_answer` function.
-- `test_loop_refines_then_answers`: Simulates a multi-step refinement loop where evidence is retrieved in multiple rounds before generating an answer. Verifies that the agent stops after sufficient evidence is gathered.
-- `test_assess_compare_requires_doc_diversity`: Ensures that the `node_assess_evidence` function requires evidence from diverse documents for comparison tasks.
-- `test_budget_stop_refuses_without_calling_answer_llm`: Verifies that the agent stops and refuses to proceed when the tool call budget is exhausted, without invoking the answer generation LLM.
-- `test_round_limit_stops_and_refuses`: Ensures that the agent stops and refuses to proceed when the retrieval round limit is reached.
-- `test_verify_uses_refusal_reason_when_stop_reason_is_sufficient`: Tests that the `node_verify_or_refuse` function uses the refusal reason when citations are missing, even if evidence is sufficient.
-
-Notes:
-- The `monkeypatch` fixture is used extensively to mock retrieval and answer generation functions.
-- These tests ensure that the agent adheres to its constraints, such as tool call budgets, retrieval round limits, and evidence sufficiency checks.
-"""
+import pytest
 
 from rag.lc import graph as g
-from rag.lc.state_utils import init_state
+from rag.lc.state import CompareTopics, QueryAnalysis
+from rag.lc.state_utils import init_state, set_query_analysis
 
 
-def test_heuristic_route_parses_differences_between():
-    plan = g._heuristic_route("What are the differences between ML-KEM and ML-DSA?")
-    assert plan.action == "compare"
-    assert plan.args["topic_a"] == "ML-KEM"
-    assert plan.args["topic_b"] == "ML-DSA"
+def _patch_analysis(monkeypatch):
+    monkeypatch.setattr(g, "_call_llm_query_analysis", lambda question, deterministic: deterministic)
 
 
-def test_heuristic_route_ambiguous_compare_falls_back_to_retrieve():
-    plan = g._heuristic_route("Compare these schemes")
-    assert plan.action == "retrieve"
+def _set_analysis(
+    state,
+    *,
+    original_query: str | None = None,
+    canonical_query: str,
+    mode_hint: str,
+    required_anchors: list[str] | None = None,
+    compare_topics: CompareTopics | None = None,
+    doc_ids: list[str] | None = None,
+):
+    set_query_analysis(
+        state,
+        QueryAnalysis(
+            original_query=original_query or state["question"],
+            canonical_query=canonical_query,
+            mode_hint=mode_hint,  # type: ignore[arg-type]
+            required_anchors=required_anchors or [],
+            compare_topics=compare_topics,
+            doc_ids=doc_ids or [],
+            doc_family=None,
+            analysis_notes="test",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_mode", "expected_doc_ids", "expected_compare_topics"),
+    [
+        ("What is ML-KEM?", "definition", ["NIST.FIPS.203"], None),
+        ("What are the steps in Algorithm 2 SHAKE128?", "algorithm", [], None),
+        (
+            "What are the differences between ML-KEM and ML-DSA?",
+            "compare",
+            ["NIST.FIPS.203", "NIST.FIPS.204"],
+            ("ML-KEM", "ML-DSA"),
+        ),
+        ("What does NIST say about PQC for WiFi 9?", "general", [], None),
+    ],
+)
+def test_build_query_analysis_modes(
+    monkeypatch,
+    question,
+    expected_mode,
+    expected_doc_ids,
+    expected_compare_topics,
+):
+    _patch_analysis(monkeypatch)
+
+    analysis = g._build_query_analysis(question)
+
+    assert analysis.mode_hint == expected_mode
+    assert analysis.doc_ids == expected_doc_ids
+    if expected_compare_topics is None:
+        assert analysis.compare_topics is None
+    else:
+        assert analysis.compare_topics is not None
+        assert analysis.compare_topics.topic_a == expected_compare_topics[0]
+        assert analysis.compare_topics.topic_b == expected_compare_topics[1]
+
+
+def test_build_query_analysis_falls_back_on_invalid_llm_output(monkeypatch):
+    monkeypatch.setattr(g, "_call_llm_query_analysis", lambda question, deterministic: (_ for _ in ()).throw(ValueError("bad json")))
+
+    analysis = g._build_query_analysis("What is ML-KEM?")
+
+    assert analysis.mode_hint == "definition"
+    assert analysis.canonical_query == "ML-KEM"
+    assert analysis.doc_ids == ["NIST.FIPS.203"]
+    assert analysis.analysis_notes == "deterministic-fallback"
+
+
+def test_route_uses_analyzed_compare_topics_without_reparsing(monkeypatch):
+    state = init_state("Compare these schemes")
+    _set_analysis(
+        state,
+        canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
+        mode_hint="compare",
+        compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
+        doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
+    )
+
+    monkeypatch.setattr(g, "_extract_compare_topics", lambda _question: (_ for _ in ()).throw(RuntimeError("should not parse")))
+
+    out = g.node_route(state)
+
+    assert out["plan"]["action"] == "compare"
+    assert out["plan"]["args"]["topic_a"] == "ML-KEM"
+    assert out["plan"]["args"]["topic_b"] == "ML-DSA"
 
 
 def test_node_answer_preserves_citation_key(monkeypatch):
@@ -69,12 +136,89 @@ def test_node_answer_preserves_citation_key(monkeypatch):
     assert out["citations"][0]["key"] == "c1"
 
 
-def test_loop_refines_then_answers(monkeypatch):
+def test_node_retrieve_passes_analyzed_args(monkeypatch):
+    captured = {}
+
+    class CaptureRetrieve:
+        def invoke(self, payload):
+            captured.update(payload)
+            return {
+                "tool": "retrieve",
+                "evidence": [
+                    {
+                        "score": 0.9,
+                        "chunk_id": "C1",
+                        "doc_id": "NIST.FIPS.203",
+                        "start_page": 10,
+                        "end_page": 10,
+                        "text": "Algorithm 2 SHAKE128 details.",
+                    }
+                ],
+                "stats": {"n": 1},
+                "mode_hint": payload["mode_hint"],
+            }
+
+    monkeypatch.setattr(g.lc_tools, "retrieve", CaptureRetrieve())
+
+    state = init_state("What are the steps in Algorithm 2 SHAKE128?", k=3)
+    _set_analysis(
+        state,
+        canonical_query="What are the steps in Algorithm 2 SHAKE128?",
+        mode_hint="algorithm",
+        required_anchors=["Algorithm 2", "shake128"],
+        doc_ids=["NIST.FIPS.205"],
+    )
+    state["plan"] = {
+        "action": "retrieve",
+        "reason": "test",
+        "query": state["canonical_query"],
+        "args": {},
+        "mode_hint": "algorithm",
+    }
+
+    out = g.node_retrieve(state)
+
+    assert captured["query"] == "What are the steps in Algorithm 2 SHAKE128?"
+    assert captured["k"] == 3
+    assert captured["mode_hint"] == "algorithm"
+    assert captured["doc_ids"] == ["NIST.FIPS.205"]
+    assert captured["use_query_fusion"] is False
+    assert captured["enable_mode_variants"] is False
+    assert out["last_retrieval_stats"]["doc_ids"] == ["NIST.FIPS.205"]
+
+
+def test_node_refine_query_uses_analyzed_state_not_raw_question():
+    state = init_state("Compare these schemes")
+    _set_analysis(
+        state,
+        canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
+        mode_hint="compare",
+        compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
+        doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
+    )
+    state["plan"] = {
+        "action": "compare",
+        "reason": "test",
+        "query": state["canonical_query"],
+        "args": {"topic_a": "ML-KEM", "topic_b": "ML-DSA"},
+        "mode_hint": "compare",
+    }
+    state["stop_reason"] = "compare_doc_diversity_missing"
+
+    out = g.node_refine_query(state)
+
+    assert out["plan"]["action"] == "retrieve"
+    assert "ML-KEM" in out["plan"]["query"]
+    assert "ML-DSA" in out["plan"]["query"]
+    assert "Compare these schemes" not in out["plan"]["query"]
+
+
+def test_loop_starts_with_analyze_query_and_then_answers(monkeypatch):
     class SeqRetrieve:
         def __init__(self):
             self.calls = 0
 
-        def invoke(self, *_args, **_kwargs):
+        def invoke(self, _payload):
             self.calls += 1
             if self.calls == 1:
                 return {
@@ -108,6 +252,7 @@ def test_loop_refines_then_answers(monkeypatch):
                 "mode_hint": "general",
             }
 
+    _patch_analysis(monkeypatch)
     seq = SeqRetrieve()
     monkeypatch.setattr(g.lc_tools, "retrieve", seq)
     monkeypatch.setattr(
@@ -129,6 +274,9 @@ def test_loop_refines_then_answers(monkeypatch):
 
     state = g.run_agent("ML-KEM key generation")
 
+    step_nodes = [event["node"] for event in state["trace"] if event.get("type") == "step"]
+    assert step_nodes[0] == "analyze_query"
+    assert "route" in step_nodes
     assert seq.calls == 2
     assert state["tool_calls"] == 2
     assert state["retrieval_round"] == 2
@@ -139,7 +287,13 @@ def test_loop_refines_then_answers(monkeypatch):
 
 def test_assess_compare_requires_doc_diversity():
     state = init_state("What are the differences between ML-KEM and ML-DSA?")
-    state["plan"] = {"action": "compare", "args": {"topic_a": "ML-KEM", "topic_b": "ML-DSA"}}
+    _set_analysis(
+        state,
+        canonical_query="ML-KEM vs ML-DSA intended use-cases definition key properties",
+        mode_hint="compare",
+        compare_topics=CompareTopics(topic_a="ML-KEM", topic_b="ML-DSA"),
+        doc_ids=["NIST.FIPS.203", "NIST.FIPS.204"],
+    )
     state["evidence"] = [
         {
             "score": 0.9,
@@ -168,7 +322,7 @@ def test_budget_stop_refuses_without_calling_answer_llm(monkeypatch):
     called = {"answer": False}
 
     class SparseRetrieve:
-        def invoke(self, *_args, **_kwargs):
+        def invoke(self, _payload):
             return {
                 "tool": "retrieve",
                 "evidence": [
@@ -189,6 +343,7 @@ def test_budget_stop_refuses_without_calling_answer_llm(monkeypatch):
         called["answer"] = True
         raise RuntimeError("answer LLM should not be called")
 
+    _patch_analysis(monkeypatch)
     monkeypatch.setattr(g.lc_tools, "retrieve", SparseRetrieve())
     monkeypatch.setattr(g, "_call_rag_answer", boom_answer)
     monkeypatch.setattr(g, "MAX_TOOL_CALLS", 1)
@@ -208,7 +363,7 @@ def test_budget_stop_refuses_without_calling_answer_llm(monkeypatch):
 
 def test_round_limit_stops_and_refuses(monkeypatch):
     class SparseRetrieve:
-        def invoke(self, *_args, **_kwargs):
+        def invoke(self, _payload):
             return {
                 "tool": "retrieve",
                 "evidence": [
@@ -225,6 +380,7 @@ def test_round_limit_stops_and_refuses(monkeypatch):
                 "mode_hint": "general",
             }
 
+    _patch_analysis(monkeypatch)
     monkeypatch.setattr(g.lc_tools, "retrieve", SparseRetrieve())
     monkeypatch.setattr(g, "MAX_TOOL_CALLS", 5)
     monkeypatch.setattr(g, "MAX_RETRIEVAL_ROUNDS", 1)

@@ -113,6 +113,7 @@ _WHAT_DOES_MEAN_RE = re.compile(
 # -----------------------------
 
 def _bump_step(state: AgentState, node: str) -> None:
+    state["_trace_active_node"] = node
     state["steps"] = int(state.get("steps", 0)) + 1
     add_trace(
         state,
@@ -188,10 +189,11 @@ def _dedupe_strs(items: List[str]) -> List[str]:
     return out
 
 
-def _record_timing(state: AgentState, key: str, started_at: float) -> None:
+def _record_timing(state: AgentState, key: str, started_at: float) -> float:
     elapsed_ms = (perf_counter() - started_at) * 1000.0
     timing = state.setdefault("timing_ms", {})
     timing[key] = round(float(timing.get(key, 0.0)) + elapsed_ms, 3)
+    return round(elapsed_ms, 3)
 
 
 def _normalize_doc_ids(doc_ids: Any) -> List[str]:
@@ -1022,7 +1024,7 @@ def node_retrieve(state: AgentState) -> AgentState:
     existing = _to_evidence_items(state.get("evidence", []))
     merged = _merge_evidence(existing, incoming)
     set_evidence(state, merged)
-    _record_timing(state, "retrieve", started_at)
+    round_timing_ms = _record_timing(state, "retrieve", started_at)
 
     stats = {
         "round": round_no,
@@ -1036,6 +1038,7 @@ def node_retrieve(state: AgentState) -> AgentState:
         "dense_query": dense_query,
         "subqueries": subqueries,
         "protected_spans": protected_spans,
+        "timing_ms_retrieve": round_timing_ms,
     }
     state["last_retrieval_stats"] = stats
     add_trace(state, {"type": "retrieval_round_result", **stats})
@@ -1180,8 +1183,8 @@ def node_answer(state: AgentState) -> AgentState:
             )
         )
 
-    set_answer(state, answer_text, cits)
-    _record_timing(state, "generate", started_at)
+    generation_ms = _record_timing(state, "generate", started_at)
+    set_answer(state, answer_text, cits, timing_ms_generate=generation_ms)
     return state
 
 
@@ -1205,29 +1208,41 @@ def node_verify_or_refuse(state: AgentState) -> AgentState:
         state["refusal_reason"] = refusal_reason
         msg = _refusal_message(refusal_reason)
         state["citations"] = []
-        set_final_answer(state, msg)
+        set_final_answer(
+            state,
+            msg,
+            result="refuse",
+            used_refusal_template=True,
+        )
         add_trace(
             state,
             {
-                "type": "verify",
+                "type": "verification_decision",
                 "result": "refuse",
                 "stop_reason": state.get("stop_reason", ""),
                 "refusal_reason": refusal_reason,
-                "citations": 0,
+                "citations_count": 0,
+                "used_refusal_template": True,
             },
         )
         return state
 
     state["refusal_reason"] = ""
-    set_final_answer(state, draft)
+    set_final_answer(
+        state,
+        draft,
+        result="ok",
+        used_refusal_template=False,
+    )
     add_trace(
         state,
         {
-            "type": "verify",
+            "type": "verification_decision",
             "result": "ok",
             "stop_reason": state.get("stop_reason", ""),
             "refusal_reason": "",
-            "citations": len(citations),
+            "citations_count": len(citations),
+            "used_refusal_template": False,
         },
     )
     return state

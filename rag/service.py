@@ -17,6 +17,7 @@ from typing import Any
 
 from rag.config import SETTINGS, validate_settings
 from rag.lc.graph import run_agent
+from rag.lc.trace import summarize_trace
 from rag.llm.factory import get_backend
 from rag.rag_answer import build_cited_answer, select_evidence
 from rag.retrieve import retrieve_with_stages_and_timing
@@ -183,54 +184,6 @@ def _derive_refusal_reason(
     return "missing_citations_after_generation"
 
 
-def _agent_analysis_payload(state: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "original_query": str(state.get("original_query") or state.get("question") or ""),
-        "canonical_query": str(state.get("canonical_query") or state.get("question") or ""),
-        "mode_hint": str(state.get("mode_hint") or ""),
-        "rewrite_needed": bool(state.get("rewrite_needed", False)),
-        "protected_spans": list(state.get("protected_spans") or []),
-        "required_anchors": list(state.get("required_anchors") or []),
-        "sparse_query": str(state.get("sparse_query") or state.get("canonical_query") or state.get("question") or ""),
-        "dense_query": str(state.get("dense_query") or state.get("canonical_query") or state.get("question") or ""),
-        "subqueries": list(state.get("subqueries") or []),
-        "confidence": float(state.get("confidence", 0.0) or 0.0),
-        "compare_topics": state.get("compare_topics"),
-        "doc_ids": list(state.get("doc_ids") or []),
-        "doc_family": str(state.get("doc_family") or ""),
-        "analysis_notes": str(state.get("analysis_notes") or ""),
-        "answer_prompt_question": str(state.get("answer_prompt_question") or state.get("question") or ""),
-    }
-
-
-def _agent_trace_summary(state: dict[str, Any]) -> dict[str, Any]:
-    analysis = _agent_analysis_payload(state)
-    evidence = state.get("evidence") or []
-    trace = state.get("trace") or []
-    plan = state.get("plan") or {}
-    first_step = next(
-        (event.get("node") for event in trace if event.get("type") == "step" and event.get("node")),
-        "",
-    )
-    return {
-        "entry_node": first_step,
-        "plan_action": plan.get("action"),
-        "steps": int(state.get("steps", 0)),
-        "retrieval_rounds": int(state.get("retrieval_round", 0)),
-        "tool_calls": int(state.get("tool_calls", 0)),
-        "stop_reason": str(state.get("stop_reason") or ""),
-        "refusal_reason": str(state.get("refusal_reason") or ""),
-        "trace_events": len(trace),
-        "top_chunk_ids": [item.get("chunk_id") for item in evidence[:5] if isinstance(item, dict)],
-        "original_query": analysis["original_query"],
-        "canonical_query": analysis["canonical_query"],
-        "mode_hint": analysis["mode_hint"],
-        "compare_topics": analysis["compare_topics"],
-        "doc_ids": analysis["doc_ids"],
-        "answer_prompt_question": analysis["answer_prompt_question"],
-    }
-
-
 def ask_question(
     question: str,
     *,
@@ -353,14 +306,14 @@ def ask_agent_question(
     answer = str(state.get("final_answer") or state.get("draft_answer") or "")
     citations = list(state.get("citations") or [])
     refusal_reason = str(state.get("refusal_reason") or "") or None
-    analysis = _agent_analysis_payload(state)
+    trace_summary = summarize_trace(state)
 
     return {
         "question": question,
         "answer": answer,
         "citations": citations,
         "refusal_reason": refusal_reason,
-        "trace_summary": _agent_trace_summary(state),
+        "trace_summary": trace_summary["run"],
         "timing_ms": timing_ms,
-        "analysis": analysis,
+        "analysis": trace_summary["analysis"],
     }

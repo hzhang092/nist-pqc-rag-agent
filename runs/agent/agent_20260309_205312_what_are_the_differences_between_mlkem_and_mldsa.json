@@ -1,0 +1,830 @@
+{
+  "run": {
+    "question": "What are the differences between ML-KEM and ML-DSA?",
+    "entry_node": "analyze_query",
+    "mode_hint": "compare",
+    "rewrite_needed": true,
+    "protected_span_count": 2,
+    "subquery_count": 2,
+    "doc_ids": [
+      "NIST.FIPS.203",
+      "NIST.FIPS.204"
+    ],
+    "result": "ok",
+    "stop_reason": "sufficient_evidence",
+    "refusal_reason": "",
+    "steps": 9,
+    "tool_calls": 2,
+    "retrieval_rounds": 2,
+    "evidence_hits": 12,
+    "citation_count": 5,
+    "top_chunk_ids": [
+      "NIST.FIPS.204::p0029::c000",
+      "NIST.FIPS.204::p0020::c003",
+      "NIST.FIPS.204::p0007::c002",
+      "NIST.FIPS.204::p0064::c003",
+      "NIST.FIPS.204::p0008::c000"
+    ],
+    "timing_ms": {
+      "analyze": 9190.531,
+      "retrieve": 6454.843,
+      "generate": 13853.797,
+      "total": 29504.35
+    }
+  },
+  "analysis": {
+    "original_query": "What are the differences between ML-KEM and ML-DSA?",
+    "canonical_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+    "mode_hint": "compare",
+    "rewrite_needed": true,
+    "protected_spans": [
+      "ML-KEM",
+      "ML-DSA"
+    ],
+    "required_anchors": [],
+    "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+    "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+    "subqueries": [
+      "ML-KEM intended use-cases and deployment context",
+      "ML-DSA intended use-cases and deployment context"
+    ],
+    "confidence": 0.88,
+    "compare_topics": {
+      "topic_a": "ML-KEM",
+      "topic_b": "ML-DSA"
+    },
+    "doc_ids": [
+      "NIST.FIPS.203",
+      "NIST.FIPS.204"
+    ],
+    "doc_family": "",
+    "analysis_notes": "deterministic-fallback",
+    "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?"
+  },
+  "retrieval_summary": [
+    {
+      "round": 1,
+      "action": "retrieve",
+      "tool_calls": 1,
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "protected_spans": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+      "subqueries": [
+        "ML-KEM intended use-cases and deployment context",
+        "ML-DSA intended use-cases and deployment context"
+      ],
+      "new_hits": 8,
+      "total_hits": 8,
+      "top_chunk_ids": [
+        "NIST.FIPS.204::p0029::c000",
+        "NIST.FIPS.204::p0020::c003",
+        "NIST.FIPS.204::p0007::c002",
+        "NIST.FIPS.204::p0064::c003",
+        "NIST.FIPS.204::p0008::c000"
+      ],
+      "top_doc_ids": [
+        "NIST.FIPS.204"
+      ],
+      "sufficient": false,
+      "assessment_reasons": [
+        "one_sided_comparison"
+      ],
+      "budget_reason": "",
+      "refinement": {
+        "strategy": "comparison_balance_bias",
+        "previous_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+        "refined_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+        "refined_sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+        "refined_dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+        "refined_subqueries": [
+          "ML-KEM intended use-cases and deployment context",
+          "ML-DSA intended use-cases and deployment context"
+        ]
+      },
+      "timing_ms_retrieve": 5236.156
+    },
+    {
+      "round": 2,
+      "action": "retrieve",
+      "tool_calls": 2,
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "protected_spans": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+      "subqueries": [
+        "ML-KEM intended use-cases and deployment context",
+        "ML-DSA intended use-cases and deployment context"
+      ],
+      "new_hits": 8,
+      "total_hits": 12,
+      "top_chunk_ids": [
+        "NIST.FIPS.204::p0029::c000",
+        "NIST.FIPS.204::p0020::c003",
+        "NIST.FIPS.204::p0007::c002",
+        "NIST.FIPS.204::p0064::c003",
+        "NIST.FIPS.204::p0008::c000"
+      ],
+      "top_doc_ids": [
+        "NIST.FIPS.204",
+        "NIST.FIPS.203"
+      ],
+      "sufficient": true,
+      "assessment_reasons": [],
+      "budget_reason": "",
+      "refinement": null,
+      "timing_ms_retrieve": 1218.687
+    }
+  ],
+  "answer_summary": {
+    "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?",
+    "draft_len": 815,
+    "final_len": 815,
+    "citations_count": 5,
+    "citation_keys": [
+      "c1",
+      "c2",
+      "c3",
+      "c4",
+      "c6"
+    ],
+    "result": "ok",
+    "used_refusal_template": false,
+    "stop_reason": "sufficient_evidence",
+    "refusal_reason": "",
+    "timing_ms_generate": 13853.797,
+    "draft_preview": "- ML-DSA includes a \"pre-hash\" variant (HashML-DSA) where messages are pre-hashed before signing, while ML-KEM is a key-encapsulation mechanism without such pre-hashing steps [c1][c3].   - ML-DSA signing involves a context string (max 255 b...",
+    "final_preview": "- ML-DSA includes a \"pre-hash\" variant (HashML-DSA) where messages are pre-hashed before signing, while ML-KEM is a key-encapsulation mechanism without such pre-hashing steps [c1][c3].   - ML-DSA signing involves a context string (max 255 b..."
+  },
+  "trace_by_node": [
+    {
+      "node": "analyze_query",
+      "visit": 1,
+      "step": 1,
+      "tool_calls": 0,
+      "retrieval_round": 0,
+      "event_types": [
+        "analysis_applied"
+      ],
+      "events": [
+        {
+          "type": "analysis_applied",
+          "node": "analyze_query",
+          "mode_hint": "compare",
+          "rewrite_needed": true,
+          "protected_spans": [
+            "ML-KEM",
+            "ML-DSA"
+          ],
+          "doc_ids": [
+            "NIST.FIPS.203",
+            "NIST.FIPS.204"
+          ],
+          "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+          "subqueries_count": 2,
+          "analysis_notes": "deterministic-fallback"
+        }
+      ]
+    },
+    {
+      "node": "route",
+      "visit": 1,
+      "step": 2,
+      "tool_calls": 0,
+      "retrieval_round": 0,
+      "event_types": [
+        "plan_applied"
+      ],
+      "events": [
+        {
+          "type": "plan_applied",
+          "node": "route",
+          "action": "retrieve",
+          "reason": "Retrieve action selected from analyzed planner state.",
+          "query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+          "mode_hint": "compare",
+          "args_summary": {}
+        }
+      ]
+    },
+    {
+      "node": "retrieve",
+      "visit": 1,
+      "step": 3,
+      "tool_calls": 0,
+      "retrieval_round": 0,
+      "event_types": [
+        "retrieval_round_started",
+        "evidence_updated",
+        "retrieval_round_result"
+      ],
+      "events": [
+        {
+          "type": "retrieval_round_started",
+          "node": "retrieve",
+          "round": 1,
+          "action": "retrieve",
+          "tool_calls": 1
+        },
+        {
+          "type": "evidence_updated",
+          "node": "retrieve",
+          "round": 1,
+          "total_hits": 8,
+          "top_chunk_ids": [
+            "NIST.FIPS.204::p0029::c000",
+            "NIST.FIPS.204::p0020::c003",
+            "NIST.FIPS.204::p0007::c002",
+            "NIST.FIPS.204::p0064::c003",
+            "NIST.FIPS.204::p0008::c000"
+          ],
+          "top_doc_ids": [
+            "NIST.FIPS.204"
+          ]
+        },
+        {
+          "type": "retrieval_round_result",
+          "node": "retrieve",
+          "round": 1,
+          "action": "retrieve",
+          "new_hits": 8,
+          "total_hits": 8,
+          "mode_hint": "compare",
+          "doc_ids": [
+            "NIST.FIPS.203",
+            "NIST.FIPS.204"
+          ],
+          "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+          "subqueries": [
+            "ML-KEM intended use-cases and deployment context",
+            "ML-DSA intended use-cases and deployment context"
+          ],
+          "protected_spans": [
+            "ML-KEM",
+            "ML-DSA"
+          ],
+          "timing_ms_retrieve": 5236.156
+        }
+      ]
+    },
+    {
+      "node": "assess_evidence",
+      "visit": 1,
+      "step": 4,
+      "tool_calls": 1,
+      "retrieval_round": 1,
+      "event_types": [
+        "assessment_decision"
+      ],
+      "events": [
+        {
+          "type": "assessment_decision",
+          "node": "assess_evidence",
+          "sufficient": false,
+          "reasons": [
+            "one_sided_comparison"
+          ],
+          "budget_reason": "",
+          "evidence_hits": 8,
+          "doc_diversity": 1,
+          "missing_protected_spans": [],
+          "missing_compare_topics": [
+            "ML-KEM"
+          ]
+        }
+      ]
+    },
+    {
+      "node": "refine_query",
+      "visit": 1,
+      "step": 5,
+      "tool_calls": 1,
+      "retrieval_round": 1,
+      "event_types": [
+        "plan_applied",
+        "query_refined"
+      ],
+      "events": [
+        {
+          "type": "plan_applied",
+          "node": "refine_query",
+          "action": "retrieve",
+          "reason": "Refined retrieval query via comparison_balance_bias.",
+          "query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "mode_hint": "compare",
+          "args_summary": {
+            "doc_ids": [
+              "NIST.FIPS.203",
+              "NIST.FIPS.204"
+            ],
+            "protected_spans": [
+              "ML-KEM",
+              "ML-DSA"
+            ],
+            "subqueries": [
+              "ML-KEM intended use-cases and deployment context",
+              "ML-DSA intended use-cases and deployment context"
+            ],
+            "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+            "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203"
+          }
+        },
+        {
+          "type": "query_refined",
+          "node": "refine_query",
+          "strategy": "comparison_balance_bias",
+          "previous_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+          "refined_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "refined_sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "refined_dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+          "refined_subqueries": [
+            "ML-KEM intended use-cases and deployment context",
+            "ML-DSA intended use-cases and deployment context"
+          ]
+        }
+      ]
+    },
+    {
+      "node": "retrieve",
+      "visit": 2,
+      "step": 6,
+      "tool_calls": 1,
+      "retrieval_round": 1,
+      "event_types": [
+        "retrieval_round_started",
+        "evidence_updated",
+        "retrieval_round_result"
+      ],
+      "events": [
+        {
+          "type": "retrieval_round_started",
+          "node": "retrieve",
+          "round": 2,
+          "action": "retrieve",
+          "tool_calls": 2
+        },
+        {
+          "type": "evidence_updated",
+          "node": "retrieve",
+          "round": 2,
+          "total_hits": 12,
+          "top_chunk_ids": [
+            "NIST.FIPS.204::p0029::c000",
+            "NIST.FIPS.204::p0020::c003",
+            "NIST.FIPS.204::p0007::c002",
+            "NIST.FIPS.204::p0064::c003",
+            "NIST.FIPS.204::p0008::c000"
+          ],
+          "top_doc_ids": [
+            "NIST.FIPS.204",
+            "NIST.FIPS.203"
+          ]
+        },
+        {
+          "type": "retrieval_round_result",
+          "node": "retrieve",
+          "round": 2,
+          "action": "retrieve",
+          "new_hits": 8,
+          "total_hits": 12,
+          "mode_hint": "compare",
+          "doc_ids": [
+            "NIST.FIPS.203",
+            "NIST.FIPS.204"
+          ],
+          "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+          "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+          "subqueries": [
+            "ML-KEM intended use-cases and deployment context",
+            "ML-DSA intended use-cases and deployment context"
+          ],
+          "protected_spans": [
+            "ML-KEM",
+            "ML-DSA"
+          ],
+          "timing_ms_retrieve": 1218.687
+        }
+      ]
+    },
+    {
+      "node": "assess_evidence",
+      "visit": 2,
+      "step": 7,
+      "tool_calls": 2,
+      "retrieval_round": 2,
+      "event_types": [
+        "assessment_decision"
+      ],
+      "events": [
+        {
+          "type": "assessment_decision",
+          "node": "assess_evidence",
+          "sufficient": true,
+          "reasons": [],
+          "budget_reason": "",
+          "evidence_hits": 12,
+          "doc_diversity": 2,
+          "missing_protected_spans": [],
+          "missing_compare_topics": []
+        }
+      ]
+    },
+    {
+      "node": "answer",
+      "visit": 1,
+      "step": 8,
+      "tool_calls": 2,
+      "retrieval_round": 2,
+      "event_types": [
+        "answer_drafted"
+      ],
+      "events": [
+        {
+          "type": "answer_drafted",
+          "node": "answer",
+          "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?",
+          "draft_len": 815,
+          "citations_count": 5,
+          "citation_keys": [
+            "c1",
+            "c2",
+            "c3",
+            "c4",
+            "c6"
+          ],
+          "timing_ms_generate": 13853.797
+        }
+      ]
+    },
+    {
+      "node": "verify_or_refuse",
+      "visit": 1,
+      "step": 9,
+      "tool_calls": 2,
+      "retrieval_round": 2,
+      "event_types": [
+        "final_answer_set",
+        "verification_decision"
+      ],
+      "events": [
+        {
+          "type": "final_answer_set",
+          "node": "verify_or_refuse",
+          "result": "ok",
+          "final_len": 815,
+          "used_refusal_template": false,
+          "stop_reason": "sufficient_evidence",
+          "refusal_reason": ""
+        },
+        {
+          "type": "verification_decision",
+          "node": "verify_or_refuse",
+          "result": "ok",
+          "stop_reason": "sufficient_evidence",
+          "refusal_reason": "",
+          "citations_count": 5,
+          "used_refusal_template": false
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "type": "step",
+      "node": "analyze_query",
+      "steps": 1,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "analysis_applied",
+      "node": "analyze_query",
+      "mode_hint": "compare",
+      "rewrite_needed": true,
+      "protected_spans": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+      "subqueries_count": 2,
+      "analysis_notes": "deterministic-fallback"
+    },
+    {
+      "type": "step",
+      "node": "route",
+      "steps": 2,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "plan_applied",
+      "node": "route",
+      "action": "retrieve",
+      "reason": "Retrieve action selected from analyzed planner state.",
+      "query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+      "mode_hint": "compare",
+      "args_summary": {}
+    },
+    {
+      "type": "step",
+      "node": "retrieve",
+      "steps": 3,
+      "tool_calls": 0,
+      "retrieval_round": 0
+    },
+    {
+      "type": "retrieval_round_started",
+      "node": "retrieve",
+      "round": 1,
+      "action": "retrieve",
+      "tool_calls": 1
+    },
+    {
+      "type": "evidence_updated",
+      "node": "retrieve",
+      "round": 1,
+      "total_hits": 8,
+      "top_chunk_ids": [
+        "NIST.FIPS.204::p0029::c000",
+        "NIST.FIPS.204::p0020::c003",
+        "NIST.FIPS.204::p0007::c002",
+        "NIST.FIPS.204::p0064::c003",
+        "NIST.FIPS.204::p0008::c000"
+      ],
+      "top_doc_ids": [
+        "NIST.FIPS.204"
+      ]
+    },
+    {
+      "type": "retrieval_round_result",
+      "node": "retrieve",
+      "round": 1,
+      "action": "retrieve",
+      "new_hits": 8,
+      "total_hits": 8,
+      "mode_hint": "compare",
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA",
+      "subqueries": [
+        "ML-KEM intended use-cases and deployment context",
+        "ML-DSA intended use-cases and deployment context"
+      ],
+      "protected_spans": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "timing_ms_retrieve": 5236.156
+    },
+    {
+      "type": "step",
+      "node": "assess_evidence",
+      "steps": 4,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "assessment_decision",
+      "node": "assess_evidence",
+      "sufficient": false,
+      "reasons": [
+        "one_sided_comparison"
+      ],
+      "budget_reason": "",
+      "evidence_hits": 8,
+      "doc_diversity": 1,
+      "missing_protected_spans": [],
+      "missing_compare_topics": [
+        "ML-KEM"
+      ]
+    },
+    {
+      "type": "step",
+      "node": "refine_query",
+      "steps": 5,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "plan_applied",
+      "node": "refine_query",
+      "action": "retrieve",
+      "reason": "Refined retrieval query via comparison_balance_bias.",
+      "query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "mode_hint": "compare",
+      "args_summary": {
+        "doc_ids": [
+          "NIST.FIPS.203",
+          "NIST.FIPS.204"
+        ],
+        "protected_spans": [
+          "ML-KEM",
+          "ML-DSA"
+        ],
+        "subqueries": [
+          "ML-KEM intended use-cases and deployment context",
+          "ML-DSA intended use-cases and deployment context"
+        ],
+        "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+        "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203"
+      }
+    },
+    {
+      "type": "query_refined",
+      "node": "refine_query",
+      "strategy": "comparison_balance_bias",
+      "previous_query": "ML-KEM vs ML-DSA intended use-cases definition key properties",
+      "refined_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "refined_sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "refined_dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+      "refined_subqueries": [
+        "ML-KEM intended use-cases and deployment context",
+        "ML-DSA intended use-cases and deployment context"
+      ]
+    },
+    {
+      "type": "step",
+      "node": "retrieve",
+      "steps": 6,
+      "tool_calls": 1,
+      "retrieval_round": 1
+    },
+    {
+      "type": "retrieval_round_started",
+      "node": "retrieve",
+      "round": 2,
+      "action": "retrieve",
+      "tool_calls": 2
+    },
+    {
+      "type": "evidence_updated",
+      "node": "retrieve",
+      "round": 2,
+      "total_hits": 12,
+      "top_chunk_ids": [
+        "NIST.FIPS.204::p0029::c000",
+        "NIST.FIPS.204::p0020::c003",
+        "NIST.FIPS.204::p0007::c002",
+        "NIST.FIPS.204::p0064::c003",
+        "NIST.FIPS.204::p0008::c000"
+      ],
+      "top_doc_ids": [
+        "NIST.FIPS.204",
+        "NIST.FIPS.203"
+      ]
+    },
+    {
+      "type": "retrieval_round_result",
+      "node": "retrieve",
+      "round": 2,
+      "action": "retrieve",
+      "new_hits": 8,
+      "total_hits": 12,
+      "mode_hint": "compare",
+      "doc_ids": [
+        "NIST.FIPS.203",
+        "NIST.FIPS.204"
+      ],
+      "sparse_query": "ML-KEM ML-DSA intended use-cases comparison FIPS 203 FIPS 204",
+      "dense_query": "compare intended use-cases and deployment differences between ML-KEM and ML-DSA FIPS 203",
+      "subqueries": [
+        "ML-KEM intended use-cases and deployment context",
+        "ML-DSA intended use-cases and deployment context"
+      ],
+      "protected_spans": [
+        "ML-KEM",
+        "ML-DSA"
+      ],
+      "timing_ms_retrieve": 1218.687
+    },
+    {
+      "type": "step",
+      "node": "assess_evidence",
+      "steps": 7,
+      "tool_calls": 2,
+      "retrieval_round": 2
+    },
+    {
+      "type": "assessment_decision",
+      "node": "assess_evidence",
+      "sufficient": true,
+      "reasons": [],
+      "budget_reason": "",
+      "evidence_hits": 12,
+      "doc_diversity": 2,
+      "missing_protected_spans": [],
+      "missing_compare_topics": []
+    },
+    {
+      "type": "step",
+      "node": "answer",
+      "steps": 8,
+      "tool_calls": 2,
+      "retrieval_round": 2
+    },
+    {
+      "type": "answer_drafted",
+      "node": "answer",
+      "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?",
+      "draft_len": 815,
+      "citations_count": 5,
+      "citation_keys": [
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c6"
+      ],
+      "timing_ms_generate": 13853.797
+    },
+    {
+      "type": "step",
+      "node": "verify_or_refuse",
+      "steps": 9,
+      "tool_calls": 2,
+      "retrieval_round": 2
+    },
+    {
+      "type": "final_answer_set",
+      "node": "verify_or_refuse",
+      "result": "ok",
+      "final_len": 815,
+      "used_refusal_template": false,
+      "stop_reason": "sufficient_evidence",
+      "refusal_reason": ""
+    },
+    {
+      "type": "verification_decision",
+      "node": "verify_or_refuse",
+      "result": "ok",
+      "stop_reason": "sufficient_evidence",
+      "refusal_reason": "",
+      "citations_count": 5,
+      "used_refusal_template": false
+    }
+  ],
+  "evidence_preview": [
+    {
+      "score": 0.077933,
+      "chunk_id": "NIST.FIPS.204::p0029::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 29,
+      "end_page": 29,
+      "preview_text": "the platform may require hardware support for hashing to achieve acceptable performance but lack hardware support for SHAKE256 specifically. For some use cases, this may be addressed by signing a digest of the message along with some domain separation information rather than sign..."
+    },
+    {
+      "score": 0.058947,
+      "chunk_id": "NIST.FIPS.204::p0020::c003",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 20,
+      "end_page": 20,
+      "preview_text": "In the ML-DSA standard, a number of tweaks and modifications are added to this basic framework for security or efficiency reasons:  To reduce key and signature size and to use fast NTT-based polynomial multiplication, ML-DSA uses module-structured matrices. Relative to the basic ..."
+    },
+    {
+      "score": 0.055488,
+      "chunk_id": "NIST.FIPS.204::p0007::c002",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 7,
+      "end_page": 7,
+      "preview_text": "2.3 | Mathematical Symbols . . . . . . . . | . . . . | 5 2.4 | Notation . . . . . . . . . . . . . . . . . . . . . . . . | Notation . . . . . . . . . . . . . . . . . . . . . . . . | 7 2.4.1 | Rings . . . . . . . . . . . . . . . . . | 7 2.4.2 | Vectors and Matrices . . . . . . . . ..."
+    },
+    {
+      "score": 0.060699,
+      "chunk_id": "NIST.FIPS.204::p0064::c003",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 64,
+      "end_page": 64,
+      "preview_text": "D.3 Changes From FIPS 204 Initial Public Draft  In the fi nal version of the ML-DSA standard, the omitted malformed input check was restored to the hint unpacking algorithm (Algorithm 21). Additionally, in the fi nal version of ML-DSA, all of the bits of 𝑐 are used in the generat..."
+    },
+    {
+      "score": 0.055175,
+      "chunk_id": "NIST.FIPS.204::p0008::c000",
+      "doc_id": "NIST.FIPS.204",
+      "start_page": 8,
+      "end_page": 8,
+      "preview_text": "5.4 Pre-Hash ML-DSA | . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . | 18 5.4.1 HashML-DSA Signing and Verifying Internal Functions | 5.4.1 HashML-DSA Signing and Verifying Internal Functions | 5.4.1 HashML-DSA Signing and Verifying Internal Functions 22 6...."
+    }
+  ]
+}

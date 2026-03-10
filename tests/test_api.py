@@ -162,6 +162,35 @@ def test_service_ask_agent_maps_state(monkeypatch):
     assert payload["timing_ms"]["total"] == 7.0
 
 
+def test_service_ask_agent_uses_shared_trace_summarizer(monkeypatch):
+    monkeypatch.setattr(
+        service_module,
+        "run_agent",
+        lambda question, k=None: {
+            "question": question,
+            "final_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
+            "draft_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
+            "citations": [],
+            "refusal_reason": "",
+            "trace": [],
+            "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 3.0, "total": 6.0},
+        },
+    )
+    monkeypatch.setattr(
+        service_module,
+        "summarize_trace",
+        lambda state: {
+            "run": {"entry_node": "analyze_query", "result": "ok"},
+            "analysis": {"canonical_query": "ML-KEM", "mode_hint": "definition"},
+        },
+    )
+
+    payload = service_module.ask_agent_question("What is ML-KEM?", k=3)
+
+    assert payload["trace_summary"] == {"entry_node": "analyze_query", "result": "ok"}
+    assert payload["analysis"] == {"canonical_query": "ML-KEM", "mode_hint": "definition"}
+
+
 def test_health_endpoint(monkeypatch):
     monkeypatch.setattr(
         "api.main.health_status",

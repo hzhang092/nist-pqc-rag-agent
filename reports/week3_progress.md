@@ -499,3 +499,185 @@ Not completed in this update:
 - targeted planner verification slice: complete
 - full-suite rerun: not completed in this update
 - broader live backend smoke set: not completed in this update
+
+## 2026-03-09 - Day 2 trace upgrade: readable LangGraph traces + shared summarizer
+
+### Goal
+Upgrade the LangGraph trace path from a mostly raw final-state dump into a readable observability layer that makes the bounded controller easier to inspect in demos, API responses, and saved artifacts.
+
+This update was intentionally scoped to:
+- keep `state["trace"]` as the canonical flat event stream
+- derive human-facing trace views from that stream rather than storing multiple competing trace formats in graph state
+- unify saved trace files and `/ask-agent` `trace_summary` behind one shared summarizer
+- improve trace readability without changing retrieval, answer policy, or graph budgets
+
+### High-Level Before/After Trace Shape
+
+### Before
+`final AgentState -> write_trace(...) -> single JSON dump`
+
+Behavior before this upgrade:
+- `rag/lc/trace.py` deep-copied final state and wrote one JSON file
+- evidence text was truncated, but the artifact still remained mostly a raw state dump
+- mutation helpers emitted coarse events such as `analysis`, `plan`, `evidence`, `answer`, and `final_answer`
+- `/ask-agent` used a separate ad hoc service-side `trace_summary` builder
+- older `verify` events existed only as compact node-level terminal events
+
+### After
+`flat trace events -> summarize_trace(state) -> readable summary JSON + sibling raw JSON`
+
+Behavior after this upgrade:
+- `write_trace(...)` now writes:
+  - `agent_<ts>_<slug>.json` as the readable summary artifact
+  - `agent_<ts>_<slug>.raw.json` as the raw final-state dump
+- one shared `summarize_trace(state)` function now drives:
+  - saved trace summaries
+  - `/ask-agent` `trace_summary`
+  - `/ask-agent` `analysis`
+- the trace is now presented through:
+  - `run`
+  - `analysis`
+  - `retrieval_summary`
+  - `answer_summary`
+  - `trace_by_node`
+  - `timeline`
+  - `evidence_preview`
+
+### Implementation
+
+#### 1) Trace artifact split and shared summarizer
+Reworked `rag/lc/trace.py` so the trace writer is no longer a simple final-state serializer.
+
+Added:
+- `summarize_trace(state)` as the canonical trace summarizer
+- readable summary JSON output
+- sibling raw state output for debugging and replay
+
+Readable summary sections now include:
+- `run`: question, entry node, mode, rewrite flag, doc scope, result, stop/refusal reason, steps, tool calls, retrieval rounds, evidence hit count, citation count, top chunk IDs, timing totals
+- `analysis`: planner-shaped analysis payload from graph state
+- `retrieval_summary`: one card per retrieval round with query inputs, doc scope, hit counts, top docs, assessment outcome, refinement reason, and retrieval timing
+- `answer_summary`: answer prompt wording, draft/final lengths, citation keys, refusal/template usage, and final result
+- `trace_by_node`: ordered node-visit cards so repeated `retrieve` and `assess_evidence` visits remain distinct
+- `timeline`: compact execution-order event list
+- `evidence_preview`: top evidence hits with short previews only
+
+The summary file intentionally no longer repeats the full evidence blobs; the raw file preserves the full final state.
+
+#### 2) Mutation-level trace events in state helpers
+Updated `rag/lc/state_utils.py` so major state mutations emit compact, explicit trace events directly from the mutator helpers.
+
+New mutation event names:
+- `analysis_applied`
+- `plan_applied`
+- `evidence_updated`
+- `answer_drafted`
+- `final_answer_set`
+
+This replaced the older coarser helper events:
+- `analysis`
+- `plan`
+- `evidence`
+- `answer`
+- `final_answer`
+
+Compact payload design:
+- `analysis_applied` records mode, rewrite flag, protected spans, doc scope, sparse/dense query, subquery count, and analysis notes
+- `plan_applied` records action, reason, query, mode hint, and summarized args
+- `evidence_updated` records retrieval round, total hits, top chunk IDs, and top doc IDs
+- `answer_drafted` records prompt wording, draft length, citation count/keys, and generation timing
+- `final_answer_set` records final result, final length, refusal-template usage, stop reason, and refusal reason
+
+#### 3) Node attribution and terminal verification trace
+Added a private observability-only `_trace_active_node` field in graph state.
+
+Behavior after this change:
+- `_bump_step(...)` sets `_trace_active_node`
+- `add_trace(...)` attaches `node` automatically when the caller does not provide one
+- the field is used only for trace attribution, not for control flow
+
+The terminal verification path was also upgraded:
+- graph now emits `verification_decision` instead of only `verify`
+- `summarize_trace(...)` accepts both legacy `verify` and new `verification_decision` events during the transition
+- `set_final_answer(...)` now emits `final_answer_set` with explicit result metadata
+
+#### 4) Sparse timing surfacing
+Timing was kept intentionally sparse and high-signal.
+
+No generic per-mutation `timing_recorded` event was added.
+
+Instead:
+- retrieval round timing is attached to `retrieval_round_result`
+- generation timing is attached to `answer_drafted`
+- aggregate stage timing remains in `state["timing_ms"]` and is surfaced in `run`
+
+This kept the timeline readable while still showing where time went.
+
+#### 5) Shared `/ask-agent` summary source
+Removed the service-layer trace duplication by making `rag/service.py` depend on `summarize_trace(state)`.
+
+`/ask-agent` now returns:
+- `trace_summary = summarize_trace(state)["run"]`
+- `analysis = summarize_trace(state)["analysis"]`
+
+This keeps saved trace files and the API surface aligned.
+
+### Follow-up Hardening Fix
+After the trace upgrade, a real `python -m rag.agent.ask "What are the differences between ML-KEM and ML-DSA?"` smoke surfaced a trace serialization bug.
+
+Observed issue:
+- `assessment_decision["missing_compare_topics"]` in the current graph is list-shaped
+- the new trace compactor briefly assumed it was dict-shaped and called `dict(...)` on it
+- this caused `write_trace(...)` to fail after the answer had already been produced
+
+Fix applied:
+- hardened `rag/lc/trace.py` preview logic so `missing_compare_topics` now accepts:
+  - current list-shaped payloads
+  - legacy dict-shaped payloads
+  - simple string payloads defensively
+
+This restored trace writing for real compare runs while keeping legacy trace compatibility.
+
+### Regression Coverage
+Added `tests/test_lc_trace.py` as the source of truth for the trace contract.
+
+Coverage added or updated for:
+- mutation helper event names and node attribution
+- `verification_decision` plus `final_answer_set` ordering for success and refusal paths
+- legacy `verify` normalization in `summarize_trace(...)`
+- `_trace_active_node` remaining observability-only
+- per-round `retrieval_summary` grouping
+- sparse timing surfacing in round / answer / run summaries
+- summary + raw trace file writing
+- legacy dict-shaped and current list-shaped `missing_compare_topics` payload compatibility
+- `/ask-agent` using the shared trace summarizer rather than a separate ad hoc builder
+
+### Verification
+Verified with:
+- `conda run -n pyt python -m pytest -q tests/test_lc_trace.py tests/test_lc_graph.py tests/test_api.py`
+- `conda run -n pyt python -m pytest -q tests/test_lc_tools.py tests/test_retrieve_eval_api.py`
+
+Observed results:
+- trace / graph / API slice: `33 passed, 1 warning`
+- tool / retrieve-eval compatibility slice: `13 passed, 1 skipped, 1 warning`
+
+Live smoke performed after the hardening fix:
+- `conda run -n pyt python -m rag.agent.ask "What are the differences between ML-KEM and ML-DSA?"`
+
+Observed result:
+- command completed successfully
+- trace summary was written to `runs/agent/agent_20260309_205312_what_are_the_differences_between_mlkem_and_mldsa.json`
+- sibling raw state was written to `runs/agent/agent_20260309_205312_what_are_the_differences_between_mlkem_and_mldsa.raw.json`
+
+Note:
+- the `torchvision` image-extension warning still appears in the environment but is unrelated to trace serialization
+
+### Status
+- readable summary + raw trace artifact split: complete
+- shared `summarize_trace(state)` for file + API paths: complete
+- mutation-level trace events in state helpers: complete
+- ordered `trace_by_node` / `retrieval_summary` / `answer_summary`: complete
+- verification-event migration with legacy compatibility: complete
+- post-smoke `missing_compare_topics` hardening fix: complete
+- targeted trace regression coverage: complete
+- broader full-suite rerun: not completed in this update

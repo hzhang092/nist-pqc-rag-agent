@@ -186,3 +186,4 @@ class AgentState(TypedDict, total=False):
     refusal_reason: str
     last_retrieval_stats: Dict[str, Any]
     timing_ms: Dict[str, float]
+    _trace_active_node: str

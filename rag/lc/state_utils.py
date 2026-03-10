@@ -24,8 +24,40 @@ CLI flags:
 """
 # rag/lc/state_utils.py
 from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
+
 from .state import AgentState, Citation, EvidenceItem, Plan, QueryAnalysis
+
+
+def _preview_text(text: str, *, limit: int = 240) -> str:
+    preview = str(text or "").strip().replace("\n", " ")
+    if len(preview) > limit:
+        return preview[:limit] + "..."
+    return preview
+
+
+def _top_doc_ids(evidence: List[EvidenceItem], *, limit: int = 5) -> List[str]:
+    doc_ids: List[str] = []
+    seen = set()
+    for item in evidence:
+        if item.doc_id in seen:
+            continue
+        seen.add(item.doc_id)
+        doc_ids.append(item.doc_id)
+        if len(doc_ids) >= limit:
+            break
+    return doc_ids
+
+
+def _plan_args_summary(args: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "doc_ids": list(args.get("doc_ids") or [])[:5],
+        "protected_spans": list(args.get("protected_spans") or [])[:5],
+        "subqueries": list(args.get("subqueries") or [])[:5],
+        "sparse_query": _preview_text(str(args.get("sparse_query") or "")),
+        "dense_query": _preview_text(str(args.get("dense_query") or "")),
+    }
 
 def init_state(question: str, *, k: Optional[int] = None) -> AgentState:
     return {
@@ -66,14 +98,31 @@ def init_state(question: str, *, k: Optional[int] = None) -> AgentState:
         },
         "trace": [],
         "errors": [],
+        "_trace_active_node": "",
     }
 
 def add_trace(state: AgentState, event: Dict[str, Any]) -> None:
-    state.setdefault("trace", []).append(event)
+    payload = dict(event)
+    if not payload.get("node"):
+        active_node = str(state.get("_trace_active_node") or "")
+        if active_node:
+            payload["node"] = active_node
+    state.setdefault("trace", []).append(payload)
 
 def set_plan(state: AgentState, plan: Plan) -> None:
     state["plan"] = plan.to_dict()
-    add_trace(state, {"type": "plan", **state["plan"]})
+    plan_payload = state["plan"]
+    add_trace(
+        state,
+        {
+            "type": "plan_applied",
+            "action": plan_payload.get("action"),
+            "reason": _preview_text(str(plan_payload.get("reason") or "")),
+            "query": _preview_text(str(plan_payload.get("query") or "")),
+            "mode_hint": plan_payload.get("mode_hint"),
+            "args_summary": _plan_args_summary(plan_payload.get("args") or {}),
+        },
+    )
 
 
 def set_query_analysis(state: AgentState, analysis: QueryAnalysis) -> None:
@@ -96,18 +145,73 @@ def set_query_analysis(state: AgentState, analysis: QueryAnalysis) -> None:
     state["analysis_notes"] = analysis.analysis_notes or ""
     state["query_analysis"] = payload
     state["answer_prompt_question"] = analysis.answer_prompt_question or analysis.original_query
-    add_trace(state, {"type": "analysis", **payload})
+    add_trace(
+        state,
+        {
+            "type": "analysis_applied",
+            "mode_hint": analysis.mode_hint,
+            "rewrite_needed": bool(analysis.rewrite_needed),
+            "protected_spans": list(analysis.protected_spans or [])[:5],
+            "doc_ids": list(analysis.doc_ids or [])[:5],
+            "sparse_query": _preview_text(analysis.sparse_query),
+            "dense_query": _preview_text(analysis.dense_query),
+            "subqueries_count": len(analysis.subqueries or []),
+            "analysis_notes": _preview_text(analysis.analysis_notes or ""),
+        },
+    )
 
 def set_evidence(state: AgentState, evidence: List[EvidenceItem]) -> None:
     state["evidence"] = [e.to_dict() for e in evidence]
-    add_trace(state, {"type": "evidence", "n": len(evidence)})
+    add_trace(
+        state,
+        {
+            "type": "evidence_updated",
+            "round": int(state.get("retrieval_round", 0)),
+            "total_hits": len(evidence),
+            "top_chunk_ids": [item.chunk_id for item in evidence[:5]],
+            "top_doc_ids": _top_doc_ids(evidence),
+        },
+    )
 
-def set_answer(state: AgentState, answer: str, citations: List[Citation]) -> None:
+def set_answer(
+    state: AgentState,
+    answer: str,
+    citations: List[Citation],
+    *,
+    timing_ms_generate: float | None = None,
+) -> None:
     state["draft_answer"] = answer
     state["citations"] = [c.to_dict() for c in citations]
-    add_trace(state, {"type": "answer", "citations": len(citations)})
+    citation_keys = [c.key for c in citations if c.key][:5]
+    add_trace(
+        state,
+        {
+            "type": "answer_drafted",
+            "answer_prompt_question": _preview_text(str(state.get("answer_prompt_question") or state.get("question") or "")),
+            "draft_len": len(answer.strip()),
+            "citations_count": len(citations),
+            "citation_keys": citation_keys,
+            "timing_ms_generate": round(float(timing_ms_generate or 0.0), 3),
+        },
+    )
 
 
-def set_final_answer(state: AgentState, answer: str) -> None:
+def set_final_answer(
+    state: AgentState,
+    answer: str,
+    *,
+    result: str,
+    used_refusal_template: bool,
+) -> None:
     state["final_answer"] = answer
-    add_trace(state, {"type": "final_answer"})
+    add_trace(
+        state,
+        {
+            "type": "final_answer_set",
+            "result": result,
+            "final_len": len(answer.strip()),
+            "used_refusal_template": bool(used_refusal_template),
+            "stop_reason": str(state.get("stop_reason") or ""),
+            "refusal_reason": str(state.get("refusal_reason") or ""),
+        },
+    )

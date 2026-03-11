@@ -43,7 +43,7 @@ COPY --from=builder-api /opt/venv /opt/venv
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
 
 FROM base-cuda AS allinone-cuda
 
@@ -52,4 +52,4 @@ COPY scripts /app/scripts
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--reload","--host", "0.0.0.0", "--port", "8000"]

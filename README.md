@@ -86,7 +86,7 @@ docker compose run --rm api python -m eval.run
 ```
 
 Notes:
-- The Dockerfile uses `pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime` as the base for both targets.
+- The Dockerfile uses `pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime` as the base for both targets so the image aligns with `faiss-gpu-cu12`.
 - `api` is the default FastAPI service; `allinone` is a profiled CUDA service for ingest, indexing, and optional serving on port `8001`.
 - `docker-compose.yml` mounts processed artifacts, reports, runs, raw PDFs, and a named Hugging Face cache so data stays out of image layers.
 - The default Ollama container URL is `http://host.docker.internal:11434`; if you prefer Gemini, set `LLM_BACKEND=gemini` and `GEMINI_API_KEY` in `.env`.

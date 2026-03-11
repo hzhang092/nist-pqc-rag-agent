@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG PYTORCH_CUDA_BASE=pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+ARG PYTORCH_CUDA_BASE=pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime
 
 FROM ${PYTORCH_CUDA_BASE} AS base-cuda
 
@@ -23,7 +23,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m venv "${VIRTUAL_ENV}"
+# Reuse the base image's preinstalled torch/CUDA stack from /opt/conda.
+RUN python -m venv --system-site-packages "${VIRTUAL_ENV}"
 
 COPY pyproject.toml README.md /app/
 COPY api /app/api

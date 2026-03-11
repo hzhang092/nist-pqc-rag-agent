@@ -1,26 +1,92 @@
+x-app-env: &app-env
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+  LLAMA_CLOUD_API_KEY: ${LLAMA_CLOUD_API_KEY:-}
+  LLM_BACKEND: ${LLM_BACKEND:-ollama}
+  LLM_MODEL: ${LLM_MODEL:-qwen3:8B}
+  LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+  LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-120}
+  VECTOR_BACKEND: ${VECTOR_BACKEND:-faiss}
+  RETRIEVAL_MODE: ${RETRIEVAL_MODE:-hybrid}
+  TOP_K: ${TOP_K:-8}
+  RETRIEVAL_QUERY_FUSION: ${RETRIEVAL_QUERY_FUSION:-true}
+  RETRIEVAL_RRF_K0: ${RETRIEVAL_RRF_K0:-60}
+  RETRIEVAL_CANDIDATE_MULTIPLIER: ${RETRIEVAL_CANDIDATE_MULTIPLIER:-4}
+  RETRIEVAL_ENABLE_RERANK: ${RETRIEVAL_ENABLE_RERANK:-true}
+  RETRIEVAL_RERANK_POOL: ${RETRIEVAL_RERANK_POOL:-40}
+  ASK_MAX_CONTEXT_CHUNKS: ${ASK_MAX_CONTEXT_CHUNKS:-6}
+  ASK_MAX_CONTEXT_CHARS: ${ASK_MAX_CONTEXT_CHARS:-12000}
+  ASK_MIN_EVIDENCE_HITS: ${ASK_MIN_EVIDENCE_HITS:-2}
+  ASK_REQUIRE_CITATIONS: ${ASK_REQUIRE_CITATIONS:-true}
+  ASK_INCLUDE_NEIGHBOR_CHUNKS: ${ASK_INCLUDE_NEIGHBOR_CHUNKS:-true}
+  ASK_NEIGHBOR_WINDOW: ${ASK_NEIGHBOR_WINDOW:-1}
+  ASK_SHOW_EVIDENCE_DEFAULT: ${ASK_SHOW_EVIDENCE_DEFAULT:-false}
+  ASK_JSON_DEFAULT: ${ASK_JSON_DEFAULT:-false}
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-8}
+  AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-3}
+  AGENT_MAX_RETRIEVAL_ROUNDS: ${AGENT_MAX_RETRIEVAL_ROUNDS:-2}
+  AGENT_MIN_EVIDENCE_HITS: ${AGENT_MIN_EVIDENCE_HITS:-2}
+  LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
+  PYTHONHASHSEED: ${PYTHONHASHSEED:-0}
+  HF_HOME: ${HF_HOME:-/cache/huggingface}
+  TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE:-/cache/huggingface}
+
 services:
-  rag:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: nist-pqc-rag-agent:dev
+      target: api-cuda
+    image: nist-pqc-rag-agent:api-cuda
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
-      LLAMA_CLOUD_API_KEY: ${LLAMA_CLOUD_API_KEY:-}
-      VECTOR_BACKEND: ${VECTOR_BACKEND:-faiss}
-      RETRIEVAL_MODE: ${RETRIEVAL_MODE:-hybrid}
-      TOP_K: ${TOP_K:-8}
-      PYTHONHASHSEED: ${PYTHONHASHSEED:-0}
-      HF_HOME: /root/.cache/huggingface
-      TRANSFORMERS_CACHE: /root/.cache/huggingface
+      <<: *app-env
+    ports:
+      - "8000:8000"
     volumes:
-      - ./data:/app/data
+      - ./data/processed:/app/data/processed
       - ./reports:/app/reports
       - ./runs:/app/runs
-      - hf_cache:/root/.cache/huggingface
-    command: ["python", "-m", "rag.search", "ML-KEM key generation"]
+      - hf_cache:/cache/huggingface
+
+  allinone:
+    profiles: ["allinone"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: allinone-cuda
+    image: nist-pqc-rag-agent:allinone-cuda
+    working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    gpus: all
+    environment:
+      <<: *app-env
+      PARSER_BACKEND: ${PARSER_BACKEND:-docling}
+      PARSER_STRICT_PAGE_MATCH: ${PARSER_STRICT_PAGE_MATCH:-true}
+      CHUNKER_VERSION: ${CHUNKER_VERSION:-v2}
+      DOCLING_ENABLE_FORMULA_ENRICHMENT: ${DOCLING_ENABLE_FORMULA_ENRICHMENT:-1}
+      DOCLING_GENERATE_PAGE_IMAGES: ${DOCLING_GENERATE_PAGE_IMAGES:-0}
+      DOCLING_IMAGES_SCALE: ${DOCLING_IMAGES_SCALE:-1.5}
+      DOCLING_CODEFORMULA_PRESET: ${DOCLING_CODEFORMULA_PRESET:-codeformulav2}
+      DOCLING_INJECT_FORMULAS_IN_MARKDOWN: ${DOCLING_INJECT_FORMULAS_IN_MARKDOWN:-1}
+      DOCLING_DEVICE: ${DOCLING_DEVICE:-cuda}
+      DOCLING_PAGE_BATCH_SIZE: ${DOCLING_PAGE_BATCH_SIZE:-12}
+      DOCLING_MIN_PAGE_BATCH_SIZE: ${DOCLING_MIN_PAGE_BATCH_SIZE:-1}
+      DOCLING_ADAPTIVE_BATCHING: ${DOCLING_ADAPTIVE_BATCHING:-1}
+      DOCLING_SET_PYTORCH_ALLOC_CONF: ${DOCLING_SET_PYTORCH_ALLOC_CONF:-1}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data/raw_pdfs:/app/data/raw_pdfs
+      - ./data/processed:/app/data/processed
+      - ./data/debug:/app/data/debug
+      - ./reports:/app/reports
+      - ./runs:/app/runs
+      - hf_cache:/cache/huggingface
 
 volumes:
   hf_cache:

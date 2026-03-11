@@ -3,6 +3,7 @@
 .venv
 venv
 .env
+.cache
 __pycache__
 *.pyc
 *.pyo
@@ -14,17 +15,28 @@ __pycache__
 
 # Local artifacts/logs
 runs
-reports/eval
-reports/trashed
+reports
+data/debug
 
 # Processed/indexed data are generated at runtime and mounted as volumes
 data/processed
 
-# Keep raw PDFs available for ingestion when needed
-# data/raw_pdfs is intentionally not ignored
+# Raw PDFs are mounted for ingest/index jobs and should not be baked into layers
+data/raw_pdfs
+
+# Local model/cache directories
+huggingface
+models
 
 # IDE/editor noise
 .vscode
 .idea
 *.swp
 *.swo
+
+# Notebook noise
+notebooks
+*.ipynb
+
+# Agents
+.agents

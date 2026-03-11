@@ -36,34 +36,49 @@ conda activate eleven
 Copy-Item .env.example .env
 ```
 
-2) Build the image:
+2) Build the default FastAPI image:
 
 ```powershell
-docker compose build rag
+docker compose build api
 ```
 
-3) Run deterministic ingestion/index pipeline in containers:
+3) Start the API service:
 
 ```powershell
-docker compose run --rm rag python -m rag.ingest
-docker compose run --rm rag python scripts/clean_pages.py
-docker compose run --rm rag python scripts/make_chunks.py
-docker compose run --rm rag python -m rag.embed
-docker compose run --rm rag python -m rag.index_faiss
-docker compose run --rm rag python -m rag.index_bm25
+docker compose up --build api
 ```
 
-4) Run retrieval/eval from Docker:
+The default API target serves:
+- `GET /health`
+- `GET /search`
+- `POST /ask`
+- `POST /ask-agent`
+
+4) Build and use the GPU-enabled all-in-one target for ingest/index work:
 
 ```powershell
-docker compose run --rm rag python -m rag.search "ML-KEM key generation"
-docker compose run --rm rag python -m eval.run
+docker compose --profile allinone build allinone
+docker compose --profile allinone run --rm allinone python -m rag.ingest
+docker compose --profile allinone run --rm allinone python scripts/clean_pages.py
+docker compose --profile allinone run --rm allinone python scripts/make_chunks.py
+docker compose --profile allinone run --rm allinone python -m rag.embed
+docker compose --profile allinone run --rm allinone python -m rag.index_faiss
+docker compose --profile allinone run --rm allinone python -m rag.index_bm25
 ```
 
-5) Optional task runner (PowerShell):
+5) Run retrieval/eval from Docker:
+
+```powershell
+docker compose run --rm api python -m rag.search "ML-KEM key generation"
+docker compose run --rm api python -m eval.run
+```
+
+6) Optional task runner (PowerShell):
 
 ```powershell
 ./scripts/docker.ps1 -Task build
+./scripts/docker.ps1 -Task serve
+./scripts/docker.ps1 -Task build-allinone
 ./scripts/docker.ps1 -Task pipeline
 ./scripts/docker.ps1 -Task search -Query "Algorithm 19 ML-KEM.KeyGen"
 ./scripts/docker.ps1 -Task ask -Query "What does FIPS 203 specify for ML-KEM key generation?"
@@ -71,9 +86,10 @@ docker compose run --rm rag python -m eval.run
 ```
 
 Notes:
-- `docker-compose.yml` mounts `data/`, `reports/`, and `runs/` so generated artifacts persist on host.
-- Hugging Face model cache is persisted in named volume `hf_cache`.
-- Docker image pins CPU-only PyTorch (`torch==2.7.0` from PyTorch CPU index) to avoid CUDA/NVIDIA wheel downloads.
+- The Dockerfile uses `pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime` as the base for both targets.
+- `api` is the default FastAPI service; `allinone` is a profiled CUDA service for ingest, indexing, and optional serving on port `8001`.
+- `docker-compose.yml` mounts processed artifacts, reports, runs, raw PDFs, and a named Hugging Face cache so data stays out of image layers.
+- The default Ollama container URL is `http://host.docker.internal:11434`; if you prefer Gemini, set `LLM_BACKEND=gemini` and `GEMINI_API_KEY` in `.env`.
 - Keep secrets in `.env` only; never commit `.env`.
 
 ### 1) Build BM25 artifact (needed for hybrid retrieval)
@@ -438,9 +454,10 @@ Use environment variables to set project-wide defaults for retrieval and QA CLIs
 
 ### Ingestion and chunking
 
-- `PARSER_BACKEND` (default: `llamaparse`): ingestion parser backend (`llamaparse` or `docling`).
+- `PARSER_BACKEND` (default: `docling` in `.env.example`; conservative fallback: `llamaparse`): ingestion parser backend (`llamaparse` or `docling`).
 - `PARSER_STRICT_PAGE_MATCH` (default: `true`): fail ingestion on page-count mismatch.
-- `CHUNKER_VERSION` (default: `v1`): chunking strategy (`v1` legacy, `v2` markdown-aware).
+- `CHUNKER_VERSION` (default: `v2`): chunking strategy (`v1` legacy, `v2` markdown-aware).
+- `DOCLING_DEVICE` (default: `cuda` in Docker): Docling accelerator target (`cuda`, `cuda:0`, `cpu`, or `auto`).
 
 ### Retrieval
 
@@ -467,8 +484,14 @@ Use environment variables to set project-wide defaults for retrieval and QA CLIs
 - `ASK_SHOW_EVIDENCE_DEFAULT` (default: `false`): default for `--show-evidence`.
 - `ASK_JSON_DEFAULT` (default: `false`): default for `--json`.
 
-### LLM determinism
+### LLM backend and determinism
 
+- `LLM_BACKEND` (default: `ollama`): generation backend (`ollama` or `gemini`).
+- `LLM_MODEL` (default: `qwen3:8B`): model name for the selected backend.
+- `LLM_BASE_URL` (default in Docker: `http://host.docker.internal:11434`): base URL for host-side Ollama or another OpenAI-compatible endpoint.
+- `LLM_TIMEOUT_S` (default: `120`): request timeout in seconds.
+- `GEMINI_API_KEY`: Gemini API key when `LLM_BACKEND=gemini`.
+- `GEMINI_MODEL` (default: `gemini-3-flash-preview`): Gemini model fallback when `LLM_MODEL` is blank.
 - `LLM_TEMPERATURE` (default: `0.0`): generation temperature.
 
 ### PowerShell examples

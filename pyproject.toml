@@ -1,31 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "nist-pqc-rag-agent"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = [
-    "faiss-cpu==1.13.2",
+dependencies = []
+
+[project.optional-dependencies]
+core = [
     "fastapi==0.115.12",
-    "google-genai==1.63.0",
     "httpx==0.28.1",
-    "langchain-core==1.2.13",
-    "langgraph==1.0.8",
-    "docling==2.75.0",
-    "llama-parse==0.6.94",
-    "nest-asyncio==1.6.0",
     "numpy==2.4.2",
-    "ollama==0.6.1",
-    "pypdf==6.5.0",
     "python-dotenv==1.2.1",
+    "uvicorn==0.34.0",
+]
+retrieval = [
+    "faiss-gpu-cu12==1.14.1.post1",
     "rank-bm25==0.2.2",
     "sentence-transformers==5.2.2",
     "tqdm==4.67.3",
-    "uvicorn==0.34.0",
 ]
-
-[project.optional-dependencies]
+agent = [
+    "google-genai==1.63.0",
+    "langchain-core==1.2.13",
+    "langgraph==1.0.8",
+    "nest-asyncio==1.6.0",
+    "ollama==0.6.1",
+]
+ingest = [
+    "docling==2.75.0",
+    "llama-parse==0.6.94",
+    "pypdf==6.5.0",
+]
 dev = [
     "pytest==9.0.2",
 ]
 
 [tool.setuptools.packages.find]
-include = ["rag*"]
+include = ["api*", "eval*", "rag*"]

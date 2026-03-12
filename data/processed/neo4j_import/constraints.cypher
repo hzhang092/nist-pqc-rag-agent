@@ -1,0 +1,2 @@
+CREATE CONSTRAINT node_id_unique IF NOT EXISTS
+FOR (n:Entity) REQUIRE n.node_id IS UNIQUE;

@@ -18,6 +18,9 @@ runs
 reports
 data/debug
 
+# Neo4j database files
+data/neo4j/
+
 # Processed/indexed data are generated at runtime and mounted as volumes
 data/processed
 

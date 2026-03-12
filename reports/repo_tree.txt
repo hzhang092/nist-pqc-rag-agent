@@ -1,0 +1,174 @@
+nist-pqc-rag-agent/
+|-- api/
+|   |-- __init__.py
+|   `-- main.py
+|-- data/
+|   |-- debug/
+|   |   `-- docling_preflight_debug.json
+|   |-- processed/
+|   |   |-- bm25.pkl
+|   |   |-- chunk_store.jsonl
+|   |   |-- chunks.jsonl
+|   |   |-- emb_meta.json
+|   |   |-- embeddings.npy
+|   |   |-- faiss.index
+|   |   |-- manifest.json
+|   |   |-- NIST.FIPS.203_parsed.json
+|   |   |-- NIST.FIPS.204_parsed.json
+|   |   |-- NIST.FIPS.205_parsed.json
+|   |   |-- NIST.IR.8545_parsed.json
+|   |   |-- NIST.IR.8547.ipd_parsed.json
+|   |   |-- NIST.SP.800-227_parsed.json
+|   |   |-- pages.jsonl
+|   |   `-- pages_clean.jsonl
+|   `-- raw_pdfs/
+|       |-- NIST.FIPS.203.pdf
+|       |-- NIST.FIPS.204.pdf
+|       |-- NIST.FIPS.205.pdf
+|       |-- NIST.IR.8545.pdf
+|       |-- NIST.IR.8547.ipd.pdf
+|       |-- NIST.SP.800-227.pdf
+|       `-- readme.md
+|-- eval/
+|   |-- day2/
+|   |   |-- answer_n_evidence.txt
+|   |   |-- questions.txt
+|   |   `-- run_baseline.py
+|   |-- day4/
+|   |   `-- questions.jsonl
+|   |-- __init__.py
+|   |-- dataset.py
+|   |-- metrics.py
+|   `-- run.py
+|-- nist_pqc_rag_agent.egg-info/
+|   |-- dependency_links.txt
+|   |-- PKG-INFO
+|   |-- requires.txt
+|   |-- SOURCES.txt
+|   `-- top_level.txt
+|-- rag/
+|   |-- agent/
+|   |   |-- __init__.py
+|   |   `-- ask.py
+|   |-- lc/
+|   |   |-- graph.py
+|   |   |-- state.py
+|   |   |-- state_utils.py
+|   |   |-- tools.py
+|   |   `-- trace.py
+|   |-- llm/
+|   |   |-- __init__.py
+|   |   |-- base.py
+|   |   |-- factory.py
+|   |   |-- gemini.py
+|   |   `-- ollama.py
+|   |-- parsers/
+|   |   |-- __init__.py
+|   |   |-- base.py
+|   |   |-- docling_backend.py
+|   |   |-- factory.py
+|   |   `-- llamaparse_backend.py
+|   |-- retriever/
+|   |   |-- base.py
+|   |   |-- bm25_retriever.py
+|   |   |-- factory.py
+|   |   `-- faiss_retriever.py
+|   |-- __init__.py
+|   |-- ask.py
+|   |-- chunk.py
+|   |-- clean.py
+|   |-- config.py
+|   |-- embed.py
+|   |-- index_bm25.py
+|   |-- index_faiss.py
+|   |-- ingest.py
+|   |-- rag_answer.py
+|   |-- retrieve.py
+|   |-- search.py
+|   |-- search_faiss.py
+|   |-- service.py
+|   |-- text_normalize.py
+|   |-- types.py
+|   |-- utils.py
+|   `-- versioning.py
+|-- reports/
+|   |-- eval/
+|   |   |-- day4_baseline/
+|   |   |   |-- per_question.jsonl
+|   |   |   |-- summary.json
+|   |   |   `-- summary.md
+|   |   |-- baseline_per_question.jsonl
+|   |   |-- baseline_summary.json
+|   |   |-- baseline_summary.md
+|   |   |-- docling+v1_per_question.jsonl
+|   |   |-- docling+v1_summary.json
+|   |   |-- docling+v1_summary.md
+|   |   |-- questions_20260303T173852Z_summary.md
+|   |   |-- questions_20260303T173944Z_per_question.jsonl
+|   |   |-- questions_20260303T173944Z_summary.json
+|   |   |-- questions_20260303T173944Z_summary.md
+|   |   |-- questions_20260307T165242Z_per_question.jsonl
+|   |   |-- questions_20260307T165242Z_summary.json
+|   |   `-- questions_20260307T165242Z_summary.md
+|   |-- week1/
+|   |   |-- Day1_Summary_n_Project_Guidelines.md
+|   |   |-- Day2_summary.md
+|   |   |-- Day3_sumamry.md
+|   |   |-- day4_docker_setup_summary_20260220.md
+|   |   |-- day4_langgraph_bounded_iterative_refinement_report_20260219.md
+|   |   |-- Day4_summary.md
+|   |   |-- end_of_day3_state.md
+|   |   `-- project_status_detailed_review_20260228.md
+|   |-- week2/
+|   |   |-- technique_report_compare_citation_fix_20260228.md
+|   |   |-- week2_day1_ingestion_chunking_upgrade_report_20260302.md
+|   |   |-- week2_day2_retrieval_recovery_report_20260303.md
+|   |   `-- week2_plan_outdated.md
+|   |-- ablation_ingest_chunking_202603xx.md
+|   |-- notes.md
+|   |-- project_overview.md
+|   |-- week2_progress.md
+|   |-- week3_docker_setup_report_20260311.md
+|   |-- week3_plan.md
+|   `-- week3_progress.md
+|-- runs/
+|   |-- agent/
+|   |   |-- agent_20260228_214548_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260228_214755_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260228_214854_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260308_211830_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260308_224650_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260309_205312_what_are_the_differences_between_mlkem_and_mldsa.json
+|   |   |-- agent_20260309_205312_what_are_the_differences_between_mlkem_and_mldsa.raw.json
+|   |   |-- graph.png
+|   |   `-- record.md
+|   `-- day2_baseline/
+|       `-- 2026-02-17/
+|           |-- git_commit.txt
+|           |-- pip_freeze.txt
+|           |-- python_version.txt
+|           |-- questions.txt
+|           `-- results_20260217_181113.jsonl
+|-- scripts/
+|   |-- check_artifacts.py
+|   |-- clean_pages.py
+|   |-- docker.ps1
+|   |-- docling_preflight.py
+|   |-- make_chunks.py
+|   |-- mini_retrieval_sanity.py
+|   `-- repo_tree.py
+|-- tests/
+|   |-- check_clean.py
+|   |-- count_chunks.py
+|   |-- gemini-3-flash-preview-record.txt
+|   |-- README.md
+|   |-- test_api.py
+|   |-- test_bm25_index.py
+|   |-- test_chunk_determinism.py
+|   `-- test_types.py
+|-- AGENTS.md
+|-- docker-compose.yml
+|-- Dockerfile
+|-- pyproject.toml
+|-- README.md
+`-- requirements.txt

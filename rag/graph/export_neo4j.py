@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 from rag.graph.helpers import read_jsonl
@@ -34,7 +35,7 @@ def main() -> None:
                 "start_page:int": n.get("start_page"),
                 "end_page:int": n.get("end_page"),
                 "display_name": n.get("display_name"),
-                "json_properties": str(props),
+                "json_properties": json.dumps(props, ensure_ascii=False, sort_keys=True),
             }
         )
 
@@ -50,7 +51,7 @@ def main() -> None:
                 "doc_id": e.get("doc_id"),
                 "start_page:int": e.get("start_page"),
                 "end_page:int": e.get("end_page"),
-                "json_properties": str(props),
+                "json_properties": json.dumps(props, ensure_ascii=False, sort_keys=True),
             }
         )
 

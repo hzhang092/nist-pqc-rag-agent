@@ -1,0 +1,4 @@
+{"qid":"graph-def-001","question":"What is ML-KEM?","expected_doc_ids":["NIST.FIPS.203"],"expected_anchor":"ML-KEM"}
+{"qid":"graph-def-002","question":"What is ML-DSA?","expected_doc_ids":["NIST.FIPS.204"],"expected_anchor":"ML-DSA"}
+{"qid":"graph-def-003","question":"What is SLH-DSA?","expected_doc_ids":["NIST.FIPS.205"],"expected_anchor":"SLH-DSA"}
+{"qid":"graph-def-004","question":"What is little-endian?","expected_doc_ids":["NIST.FIPS.203"],"expected_anchor":"little-endian"}

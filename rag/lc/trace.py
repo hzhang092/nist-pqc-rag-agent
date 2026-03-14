@@ -166,6 +166,21 @@ def _compact_event(event: Dict[str, Any]) -> Dict[str, Any]:
         )
         return payload
 
+    if event_type == "graph_lookup_applied":
+        payload = _base()
+        payload.update(
+            {
+                "matched": bool(event.get("matched", False)),
+                "match_reason": str(event.get("match_reason") or ""),
+                "lookup_term": _preview_text(str(event.get("lookup_term") or ""), limit=_TIMELINE_TEXT_LIMIT),
+                "candidate_doc_ids": _preview_list(event.get("candidate_doc_ids") or []),
+                "candidate_section_ids": _preview_list(event.get("candidate_section_ids") or []),
+                "required_anchors": _preview_list(event.get("required_anchors") or []),
+                "applied_doc_ids": _preview_list(event.get("applied_doc_ids") or []),
+            }
+        )
+        return payload
+
     if event_type == "evidence_updated":
         payload = _base()
         payload.update(

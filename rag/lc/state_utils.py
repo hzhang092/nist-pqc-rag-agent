@@ -59,7 +59,12 @@ def _plan_args_summary(args: Dict[str, Any]) -> Dict[str, Any]:
         "dense_query": _preview_text(str(args.get("dense_query") or "")),
     }
 
-def init_state(question: str, *, k: Optional[int] = None) -> AgentState:
+def init_state(
+    question: str,
+    *,
+    k: Optional[int] = None,
+    use_graph_lookup: bool = True,
+) -> AgentState:
     return {
         "question": question,
         "original_query": question,
@@ -78,6 +83,8 @@ def init_state(question: str, *, k: Optional[int] = None) -> AgentState:
         "analysis_notes": "",
         "answer_prompt_question": question,
         "query_analysis": {},
+        "graph_lookup_enabled": bool(use_graph_lookup),
+        "graph_lookup": {},
         "request_k": int(k) if k is not None else 0,
         "evidence": [],
         "citations": [],

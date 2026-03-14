@@ -35,6 +35,7 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
         sys.path.insert(0, str(repo_root))
 
 from rag.config import SETTINGS
+from rag.graph.query import lookup_term
 from rag.text_normalize import normalize_identifier_like_spans
 
 try:
@@ -709,6 +710,85 @@ def _build_query_analysis(question: str) -> QueryAnalysis:
         return deterministic
 
 
+def _merge_graph_doc_ids(existing_doc_ids: List[str], candidate_doc_ids: List[str]) -> List[str]:
+    existing = [doc_id for doc_id in existing_doc_ids if str(doc_id or "").strip()]
+    candidates = [doc_id for doc_id in candidate_doc_ids if str(doc_id or "").strip()]
+    if existing and candidates:
+        overlap = [doc_id for doc_id in existing if doc_id in set(candidates)]
+        return overlap or existing
+    return candidates or existing
+
+
+def _apply_definition_graph_lookup(
+    analysis: QueryAnalysis,
+    *,
+    enabled: bool,
+) -> tuple[QueryAnalysis, dict[str, Any]]:
+    if not enabled or analysis.mode_hint != "definition":
+        return analysis, {}
+
+    lookup_value = analysis.canonical_query or analysis.original_query
+    try:
+        lookup = lookup_term(lookup_value, doc_ids=list(analysis.doc_ids or []))
+    except Exception as exc:
+        return analysis, {
+            "matched": False,
+            "match_reason": f"lookup_error:{type(exc).__name__}",
+            "lookup_term": lookup_value,
+            "candidate_doc_ids": [],
+            "candidate_section_ids": [],
+            "required_anchors": [],
+            "matched_entities": [],
+            "applied_doc_ids": list(analysis.doc_ids or []),
+        }
+
+    graph_debug = {
+        "matched": bool(lookup.get("matched_entities")),
+        "match_reason": str(lookup.get("match_reason") or ""),
+        "lookup_term": lookup_value,
+        "candidate_doc_ids": list(lookup.get("candidate_doc_ids") or []),
+        "candidate_section_ids": list(lookup.get("candidate_section_ids") or []),
+        "required_anchors": list(lookup.get("required_anchors") or []),
+        "matched_entities": list(lookup.get("matched_entities") or []),
+    }
+    if not graph_debug["matched"]:
+        graph_debug["applied_doc_ids"] = list(analysis.doc_ids or [])
+        return analysis, graph_debug
+
+    merged_doc_ids = _merge_graph_doc_ids(
+        list(analysis.doc_ids or []),
+        list(graph_debug["candidate_doc_ids"]),
+    )
+    merged_anchors = _dedupe_strs(
+        list(analysis.required_anchors or []) + list(graph_debug["required_anchors"])
+    )
+    merged_protected = _dedupe_strs(
+        list(analysis.protected_spans or []) + list(graph_debug["required_anchors"])
+    )
+    graph_debug["applied_doc_ids"] = merged_doc_ids
+
+    return (
+        QueryAnalysis(
+            original_query=analysis.original_query,
+            canonical_query=analysis.canonical_query,
+            mode_hint=analysis.mode_hint,
+            rewrite_needed=analysis.rewrite_needed,
+            protected_spans=merged_protected,
+            required_anchors=merged_anchors,
+            sparse_query=analysis.sparse_query,
+            dense_query=analysis.dense_query,
+            subqueries=analysis.subqueries,
+            confidence=analysis.confidence,
+            compare_topics=analysis.compare_topics,
+            doc_ids=merged_doc_ids,
+            doc_family=analysis.doc_family,
+            analysis_notes=analysis.analysis_notes,
+            answer_prompt_question=analysis.answer_prompt_question,
+        ),
+        graph_debug,
+    )
+
+
 def _text_contains_span(text: str, span: str) -> bool:
     normalized_text = normalize_identifier_like_spans(text or "").lower()
     normalized_span = normalize_identifier_like_spans(span or "").lower()
@@ -906,7 +986,26 @@ def node_analyze_query(state: AgentState) -> AgentState:
     started_at = perf_counter()
 
     analysis = _build_query_analysis(state["question"])
+    analysis, graph_lookup = _apply_definition_graph_lookup(
+        analysis,
+        enabled=bool(state.get("graph_lookup_enabled", True)),
+    )
+    state["graph_lookup"] = graph_lookup
     set_query_analysis(state, analysis)
+    if graph_lookup:
+        add_trace(
+            state,
+            {
+                "type": "graph_lookup_applied",
+                "matched": bool(graph_lookup.get("matched", False)),
+                "match_reason": str(graph_lookup.get("match_reason") or ""),
+                "lookup_term": str(graph_lookup.get("lookup_term") or ""),
+                "candidate_doc_ids": list(graph_lookup.get("candidate_doc_ids") or []),
+                "candidate_section_ids": list(graph_lookup.get("candidate_section_ids") or []),
+                "required_anchors": list(graph_lookup.get("required_anchors") or []),
+                "applied_doc_ids": list(graph_lookup.get("applied_doc_ids") or []),
+            },
+        )
     _record_timing(state, "analyze", started_at)
     return state
 
@@ -1324,9 +1423,9 @@ def build_graph():
 GRAPH = build_graph()
 
 
-def run_agent(question: str, *, k: int | None = None) -> AgentState:
+def run_agent(question: str, *, k: int | None = None, use_graph_lookup: bool = True) -> AgentState:
     started_at = perf_counter()
-    state = init_state(question, k=k)
+    state = init_state(question, k=k, use_graph_lookup=use_graph_lookup)
     recursion_limit = max(20, MAX_STEPS * 4)
     out = GRAPH.invoke(state, config={"recursion_limit": recursion_limit})
     out.setdefault("timing_ms", {})["total"] = round((perf_counter() - started_at) * 1000.0, 3)

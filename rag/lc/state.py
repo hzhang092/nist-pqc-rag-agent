@@ -162,6 +162,8 @@ class AgentState(TypedDict, total=False):
     analysis_notes: str
     answer_prompt_question: str
     query_analysis: Dict[str, Any]
+    graph_lookup_enabled: bool
+    graph_lookup: Dict[str, Any]
     request_k: int
 
     # Router output

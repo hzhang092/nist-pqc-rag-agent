@@ -106,6 +106,94 @@ def test_build_query_analysis_falls_back_on_invalid_llm_output(monkeypatch):
     assert analysis.analysis_notes == "deterministic-fallback"
 
 
+def test_node_analyze_query_applies_definition_graph_lookup(monkeypatch):
+    monkeypatch.setattr(
+        g,
+        "_build_query_analysis",
+        lambda question: QueryAnalysis(
+            original_query=question,
+            canonical_query="encapsulation",
+            mode_hint="definition",
+            rewrite_needed=True,
+            protected_spans=["encapsulation"],
+            required_anchors=[],
+            sparse_query="encapsulation definition",
+            dense_query="definition and notation for encapsulation",
+            subqueries=[],
+            confidence=0.88,
+            compare_topics=None,
+            doc_ids=[],
+            doc_family=None,
+            analysis_notes="test",
+            answer_prompt_question=question,
+        ),
+    )
+    monkeypatch.setattr(
+        g,
+        "lookup_term",
+        lambda term, doc_ids=None: {
+            "matched_entities": [
+                {
+                    "node_id": "term::encapsulation",
+                    "display_name": "encapsulation",
+                    "normalized_term": "encapsulation",
+                    "term_type": "operation",
+                    "definition_strength": "heuristic_definition_section",
+                }
+            ],
+            "candidate_doc_ids": ["NIST.FIPS.203"],
+            "candidate_section_ids": ["section::NIST.FIPS.203::2. Terms and Definitions"],
+            "required_anchors": ["encapsulation"],
+            "match_reason": "exact_normalized_term",
+        },
+    )
+
+    state = init_state("What is encapsulation?", use_graph_lookup=True)
+    out = g.node_analyze_query(state)
+
+    assert out["doc_ids"] == ["NIST.FIPS.203"]
+    assert out["required_anchors"] == ["encapsulation"]
+    graph_event = next(event for event in out["trace"] if event.get("type") == "graph_lookup_applied")
+    assert graph_event["candidate_section_ids"] == ["section::NIST.FIPS.203::2. Terms and Definitions"]
+    assert graph_event["applied_doc_ids"] == ["NIST.FIPS.203"]
+
+
+def test_node_analyze_query_skips_graph_lookup_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        g,
+        "_build_query_analysis",
+        lambda question: QueryAnalysis(
+            original_query=question,
+            canonical_query="encapsulation",
+            mode_hint="definition",
+            rewrite_needed=True,
+            protected_spans=["encapsulation"],
+            required_anchors=[],
+            sparse_query="encapsulation definition",
+            dense_query="definition and notation for encapsulation",
+            subqueries=[],
+            confidence=0.88,
+            compare_topics=None,
+            doc_ids=[],
+            doc_family=None,
+            analysis_notes="test",
+            answer_prompt_question=question,
+        ),
+    )
+    monkeypatch.setattr(
+        g,
+        "lookup_term",
+        lambda term, doc_ids=None: (_ for _ in ()).throw(AssertionError("graph lookup should be disabled")),
+    )
+
+    state = init_state("What is encapsulation?", use_graph_lookup=False)
+    out = g.node_analyze_query(state)
+
+    assert out["doc_ids"] == []
+    assert out["graph_lookup"] == {}
+    assert all(event.get("type") != "graph_lookup_applied" for event in out["trace"])
+
+
 def test_route_uses_single_retrieve_action_without_reparsing(monkeypatch):
     state = init_state("Compare these schemes")
     _set_analysis(

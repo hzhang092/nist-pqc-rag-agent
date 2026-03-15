@@ -2,49 +2,74 @@
 PQC Standards Navigator — Agentic RAG over NIST PDFs with citations + eval harness.
 
 ## Project overview
-- Implements a retrieval-augmented generation (RAG) system over NIST's post-quantum cryptography standardization documents.
-- Uses a LangGraph agent to perform tool-using question answering with retrieval and citation grounding.
-- Provides a CLI for retrieval and QA, plus an evaluation suite for tuning retrieval performance.
+- Builds a citation-grounded, agentic RAG assistant over NIST Post-Quantum Cryptography (PQC) standards-style PDFs.
+- Prioritizes deterministic ingestion/chunking and page-level citations (`doc_id`, `start_page`, `end_page`) so answers can be audited.
+- Includes hybrid retrieval (FAISS + BM25 + query fusion + RRF), a bounded LangGraph controller, and an eval harness for measured iteration.
 
-## Key NIST document sources in the project
-[NIST's Post-Quantum Cryptography Standardization Project](https://csrc.nist.gov/projects/post-quantum-cryptography)
+### Document scope (core)
 
-[NIST Releases First 3 Finalized Post-Quantum Encryption Standards](https://www.nist.gov/news-events/news/2024/08/nist-releases-first-3-finalized-post-quantum-encryption-standards?utm_source=chatgpt.com)
+This repo is intentionally scoped to a small, standards-centric PQC set:
 
-[NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption](https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption?utm_source=chatgpt.com)
+- FIPS 203 (ML-KEM)
+- FIPS 204 (ML-DSA)
+- FIPS 205 (SLH-DSA)
+- SP 800-227
+- NIST IR 8545
+- NIST IR 8547
 
-[HQC](https://pqc-hqc.org/resources.html)
+Optional PDFs may exist, but should remain out of default eval scope unless explicitly promoted.
 
-what characteristics of the NIST doc  make this project special?
-- technical content: dense with math, tables, algorithms, and domain-specific language
-- structured layout: clear sections, subsections, and page numbers that can be leveraged for precise citations
-- authoritative source: as the official standards body, NIST docs are definitive references, so accurate retrieval and citation is crucial for trustworthiness
+## Why this corpus is a good RAG testbed
+
+- Dense technical content: algorithms, identifiers, tables, math-like spans, and cross-references.
+- Structure you can exploit: sections/subsections and stable page numbering for precise citations.
+- “Trust over vibes”: the point is not just answering, but answering with retrievable, page-cited evidence.
+
+Reference: NIST PQC standardization hub: https://csrc.nist.gov/projects/post-quantum-cryptography
+
+## Setup (local)
+
+This repo supports Python $\ge$ 3.10.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+pip install -r requirements.txt
+```
+
+Notes:
+
+- `requirements.txt` installs the project with extras from `pyproject.toml`.
+- The retrieval extra currently pins `faiss-gpu-cu12`; if you don’t have a CUDA-capable setup, Docker is the easiest path.
 
 ## Retrieval CLI quickstart
 
-Use the project conda environment:
+Once artifacts exist (after running ingest → clean → chunk → embed → index), you can run:
 
-```powershell
-conda activate eleven
+```bash
+python -m rag.search "ML-KEM key generation"
+python -m rag.ask "What does FIPS 203 specify for ML-KEM key generation?" --show-evidence
+python -m eval.run
 ```
 
 ## Docker quickstart
 
 1) Create runtime env file from template:
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
 ```
 
 2) Build the default FastAPI image:
 
-```powershell
+```bash
 docker compose build api
 ```
 
 3) Start the API service:
 
-```powershell
+```bash
 docker compose up --build api
 ```
 
@@ -56,7 +81,7 @@ The default API target serves:
 
 4) Build and use the GPU-enabled all-in-one target for ingest/index work:
 
-```powershell
+```bash
 docker compose --profile allinone build allinone
 docker compose --profile allinone run --rm allinone python -m rag.ingest
 docker compose --profile allinone run --rm allinone python scripts/clean_pages.py
@@ -68,12 +93,12 @@ docker compose --profile allinone run --rm allinone python -m rag.index_bm25
 
 5) Run retrieval/eval from Docker:
 
-```powershell
+```bash
 docker compose run --rm api python -m rag.search "ML-KEM key generation"
 docker compose run --rm api python -m eval.run
 ```
 
-6) Optional task runner (PowerShell):
+6) Optional task runner (PowerShell/Windows):
 
 ```powershell
 ./scripts/docker.ps1 -Task build

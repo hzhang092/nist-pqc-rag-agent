@@ -795,3 +795,433 @@ At that point, the only missing step is manual execution of the generated Cypher
 - The current on-disk graph artifacts are useful and already populated, but they are disconnected from the live RAG path.
 - The biggest engineering risk is not correctness of the builder; it is product incompleteness around Neo4j import and downstream usage.
 - If this subsystem is meant to matter architecturally, the next step should be to pick one concrete graph-assisted workflow and connect it to retrieval or agent evidence selection.
+
+---
+
+# Addendum — Post-Upgrade Repo Review (2026-03-14)
+
+This addendum reflects the graph-lite upgrade that shipped after the original review above. The earlier sections are still useful for understanding the pre-upgrade design, but several of the original limitations are no longer accurate:
+
+- term extraction is no longer seed-only
+- section hierarchy is no longer only implicit in strings
+- the LangGraph path now has one narrow graph-assisted lookup flow
+- Neo4j is still not part of the live LangGraph runtime path
+
+The current graph subsystem is still scoped and still honest about its role: it remains a deterministic sidecar plus a small runtime support layer for definition-style query analysis. It is not a graph-native retriever, not a graph-backed answer engine, and not a live Neo4j application.
+
+## Files examined for this addendum
+
+- `rag/graph/build_lite.py`
+- `rag/graph/helpers.py`
+- `rag/graph/query.py`
+- `rag/graph/export_neo4j.py`
+- `rag/lc/graph.py`
+- `rag/lc/state.py`
+- `rag/lc/state_utils.py`
+- `rag/lc/trace.py`
+- `tests/test_graph_build_lite.py`
+- `tests/test_graph_export_neo4j.py`
+- `tests/test_graph_query.py`
+- `tests/test_lc_graph.py`
+- `eval/graph_definition_sanity.jsonl`
+- `eval/graph_definition_sanity.py`
+- `reports/eval/graph_definition_sanity.md`
+- `data/processed/graph_lite_nodes.jsonl`
+- `data/processed/graph_lite_edges.jsonl`
+
+## 1. What changed in the graph build
+
+### 1.1 Build flow is now an explicit 3-pass deterministic pipeline
+
+`rag/graph/build_lite.py` no longer does one flat accumulation pass. It now splits work into:
+
+1. structure pass
+   - collects document spans
+   - collects cumulative section prefixes
+   - records explicit section parent-child pairs
+   - extracts canonical numbered algorithm anchors from actual algorithm headers
+2. term aggregation pass
+   - scans chunks for deterministic term candidates
+   - aggregates evidence across chunks, sections, and documents
+   - tracks candidate source type, surface forms, chunk support, and anchor attachment
+3. materialization pass
+   - emits nodes only after candidate validation is complete
+   - emits edges only after the final node set is known
+   - sorts both node and edge rows deterministically before JSONL write
+
+This is a meaningful architectural upgrade because terms are no longer emitted opportunistically from a single local hit. They are now admitted only after cross-chunk validation.
+
+### 1.2 Section hierarchy is now explicit
+
+The old review correctly noted that section hierarchy was represented only through cumulative path strings. That is no longer true.
+
+Current mechanism:
+
+- for every cumulative `section_path` prefix, the builder still creates a `Section` node
+- while doing that, it also records `(child_section_id, parent_section_id)` pairs
+- during materialization it emits `CHILD_OF` edges from the deeper prefix to its immediate parent
+
+This means section navigation no longer depends entirely on reparsing `full_section_path`.
+
+Observed current artifact count after rebuild:
+
+- `CHILD_OF`: 284 edges
+
+Example current edge shape:
+
+```json
+{
+  "type": "CHILD_OF",
+  "source_id": "section::NIST.FIPS.203::1. Introduction > 1.1 Purpose and Scope",
+  "target_id": "section::NIST.FIPS.203::1. Introduction"
+}
+```
+
+### 1.3 Algorithm nodes are now canonical numbered nodes with richer properties
+
+The old graph created numeric algorithm nodes and, in some cases, separate normalized named algorithm nodes. That duplicate modeling has been removed.
+
+Current mechanism:
+
+- `rag/graph/helpers.py` now exposes `extract_algorithm_header_info(text)`
+- it parses only true algorithm header lines matched by `ALGORITHM_HEADER_PATTERN`
+- for each header it extracts:
+  - `algorithm_number`
+  - `algorithm_label`
+  - `algorithm_name`
+  - `raw_header`
+- `build_lite.py` uses the numeric algorithm number as the canonical ID key:
+  - `alg::<doc_id>::<algorithm_number>`
+- if multiple chunks could anchor the same numbered algorithm, the existing deterministic anchor priority still applies
+
+Current `Algorithm` node properties now include:
+
+- `algorithm_number`
+- `algorithm_label`
+- `algorithm_name`
+- `raw_header`
+- `section_id`
+
+This directly improves lookup and traceability because runtime code can now resolve `Algorithm 19` style anchors against one canonical node form.
+
+### 1.4 Term extraction is no longer a fixed ten-term seed list
+
+This is the biggest functional change in the graph builder.
+
+The old version only matched a hardcoded `TERM_SEEDS` list. The current version uses deterministic multi-source extraction in `rag/graph/helpers.py` via `extract_term_candidates(...)`.
+
+Current candidate sources:
+
+- definition-like sections
+  - detected from section path hints such as `terms`, `definitions`, `notation`, `acronyms`, `symbols`
+  - definition rows are extracted with a pipe-delimited heuristic such as `term | definition`
+- identifier/acronym regexes
+  - examples include `ML-KEM`, `ML-DSA`, `SLH-DSA`, dotted identifiers, and bounded acronym-like spans such as `SHAKE128`
+- algorithm headers
+  - `algorithm_name` values from parsed headers
+  - operation phrases visible in headers
+- section headings
+  - only domain-looking identifiers or operation phrases are retained
+
+The builder aggregates candidate evidence across chunks and then validates each normalized term with this rule:
+
+- keep the term if it appears in a definition-like section, or
+- keep the term if it matched the identifier regex path, or
+- keep the term if it appears in at least 2 chunks, or
+- keep the term if it is attached to a section/algorithm anchor
+
+This is still heuristic, but it is materially broader and more defensible than the old fixed seed list because every term now has traceable support.
+
+### 1.5 Term nodes carry richer metadata
+
+Current `Term` node properties include:
+
+- `normalized_term`
+- `surface_forms`
+- `term_type`
+- `definition_strength`
+
+Current `term_type` values come from deterministic classification in `classify_term_type(...)` and can be:
+
+- `identifier`
+- `acronym`
+- `operation`
+- `concept`
+- `symbol`
+
+Current `definition_strength` in this shipped slice is:
+
+- `heuristic_definition_section` if the term had definition-like section evidence
+- `seed` otherwise
+
+The label `seed` is now being used as a fallback strength bucket, not as a claim that the term came from the old fixed term seed list.
+
+### 1.6 Current artifact shape and counts
+
+After the rebuilt artifacts were written from the upgraded builder, the current graph-lite JSONL counts are:
+
+- nodes: 660 total
+  - `Document`: 6
+  - `Section`: 369
+  - `Algorithm`: 87
+  - `Term`: 198
+- edges: 1,840 total
+  - `IN_DOCUMENT`: 727
+  - `APPEARS_IN`: 703
+  - `CHILD_OF`: 284
+  - `DEFINED_IN`: 126
+
+That is a real shift in graph density and usefulness relative to the older sidecar described above.
+
+## 2. What changed in the runtime path
+
+### 2.1 There is now a real graph-assisted LangGraph hook
+
+The earlier report said the graph artifacts were not consumed during agent execution. That is no longer fully true.
+
+There is now one narrow runtime integration point:
+
+- definition-mode query analysis in `rag/lc/graph.py`
+
+The integration is intentionally scoped:
+
+- no graph-assisted retrieval ranking
+- no graph traversal during answer generation
+- no graph-aware reranking
+- no Neo4j dependency
+
+### 2.2 The runtime lookup path is file-backed, not database-backed
+
+This is the most important implementation fact to state clearly.
+
+Current live runtime path:
+
+```text
+/ask-agent
+  -> rag.lc.graph.node_analyze_query
+  -> rag.graph.query.lookup_term
+  -> data/processed/graph_lite_nodes.jsonl
+  -> data/processed/graph_lite_edges.jsonl
+```
+
+Current LangGraph code imports:
+
+```python
+from rag.graph.query import lookup_term
+```
+
+There is no Neo4j client import in `rag/lc/graph.py`, no Bolt connection setup, no Cypher execution, and no runtime call into `export_neo4j.py`.
+
+So the answer to “is Neo4j actually used in the LangGraph path?” is:
+
+- no, Neo4j is not used in the LangGraph path
+- yes, the LangGraph path now uses graph data
+- but that graph data is read from the JSONL sidecar through `rag/graph/query.py`, not from Neo4j
+
+### 2.3 How `rag/graph/query.py` works
+
+`rag/graph/query.py` is a new file-backed lookup layer over the prebuilt JSONL artifacts.
+
+Mechanism:
+
+- uses `NODES_PATH = data/processed/graph_lite_nodes.jsonl`
+- uses `EDGES_PATH = data/processed/graph_lite_edges.jsonl`
+- lazily builds an in-memory cached index with `@lru_cache(maxsize=1)`
+- stores:
+  - `nodes`
+  - outgoing edges by source node
+  - term lookup maps by:
+    - normalized term
+    - surface form
+    - display name
+
+Match priority:
+
+1. exact normalized term
+2. surface form
+3. display name
+
+Return payload from `lookup_term(...)`:
+
+- `matched_entities`
+- `candidate_doc_ids`
+- `candidate_section_ids`
+- `required_anchors`
+- `match_reason`
+
+This is deliberately simple and bounded. It gives the agent just enough structure to improve query analysis without creating a graph-database dependency.
+
+### 2.4 How `rag/lc/graph.py` applies the lookup
+
+The runtime integration lives in `_apply_definition_graph_lookup(...)` and is called from `node_analyze_query(...)`.
+
+Behavior:
+
+- only runs when:
+  - graph lookup is enabled, and
+  - `analysis.mode_hint == "definition"`
+- uses `analysis.canonical_query` or `analysis.original_query` as the lookup value
+- calls `lookup_term(...)`
+- if there is a match:
+  - merges graph-provided `candidate_doc_ids` into `analysis.doc_ids`
+  - merges graph-provided anchors into:
+    - `required_anchors`
+    - `protected_spans`
+- records graph lookup debug state in:
+  - `state["graph_lookup"]`
+  - trace events of type `graph_lookup_applied`
+
+Important boundary:
+
+- `candidate_section_ids` are recorded for debug/trace only
+- they do not currently drive retrieval filtering
+- retrieval remains doc/chunk-centric, consistent with the repo’s current retrieval interface
+
+That design matches the stated scope discipline: the graph assists analysis and narrowing, but does not become the retrieval engine.
+
+### 2.5 Graph lookup is switchable for tests and controlled runs
+
+`run_agent(...)` now accepts:
+
+- `use_graph_lookup: bool = True`
+
+`init_state(...)` stores:
+
+- `graph_lookup_enabled`
+- `graph_lookup`
+
+This matters because it gives the repo a clean way to compare before/after graph-assisted query analysis behavior without branching the main agent flow.
+
+## 3. Neo4j status after the update
+
+### 3.1 Neo4j export improved, but remains offline-only
+
+`rag/graph/export_neo4j.py` was improved in one practical way:
+
+- `json_properties` is now serialized with `json.dumps(..., sort_keys=True)`
+
+This fixes one of the explicit issues in the original review: properties are now emitted as real JSON strings instead of Python dict repr strings.
+
+### 3.2 What Neo4j still is in this repo
+
+Neo4j is still:
+
+- an export target
+- a demo / inspection path
+- a manual import workflow
+
+Neo4j is still not:
+
+- queried by `rag/lc/graph.py`
+- queried by `rag/service.py`
+- queried by any retriever
+- a prerequisite for `/ask-agent`
+- a dependency of the shipped runtime lookup path
+
+### 3.3 Neo4j import packaging is still incomplete
+
+The original review’s operational point remains true:
+
+- the export path exists
+- `docker-compose.neo4j.yml` exists
+- APOC-based load scripts exist
+- but import is still an offline path rather than a first-class runtime service
+
+The `neo4j_import` directory permissions issue also remains a practical usability caveat in this workspace state.
+
+## 4. Tests and validation added with the upgrade
+
+The graph upgrade shipped with new targeted coverage.
+
+### 4.1 Graph build tests
+
+`tests/test_graph_build_lite.py` now verifies:
+
+- canonical numbered algorithm nodes
+- rich algorithm properties
+- `CHILD_OF` edges
+- deterministic term extraction and rejection of generic noise
+- byte-identical output across repeated builds
+
+### 4.2 Neo4j export test
+
+`tests/test_graph_export_neo4j.py` verifies:
+
+- `json_properties` in exported CSV rows is valid JSON
+
+### 4.3 Query lookup test
+
+`tests/test_graph_query.py` verifies:
+
+- `lookup_term(...)` returns expected:
+  - candidate doc IDs
+  - candidate section IDs
+  - required anchors
+
+### 4.4 LangGraph integration test
+
+`tests/test_lc_graph.py` now includes graph-specific checks that verify:
+
+- definition-mode analyze-query applies graph lookup
+- graph-derived `doc_ids` and anchors are merged into state
+- graph lookup can be disabled cleanly
+
+## 5. Eval artifact added with the upgrade
+
+The repo now includes a tiny graph-specific evaluation artifact:
+
+- dataset: `eval/graph_definition_sanity.jsonl`
+- runner: `eval/graph_definition_sanity.py`
+- output report: `reports/eval/graph_definition_sanity.md`
+
+This is not a full retrieval ablation. It is intentionally narrower.
+
+What it measures:
+
+- whether graph lookup improves doc narrowing
+- whether graph lookup improves required-anchor enrichment
+- whether the analyzed request becomes more constrained before retrieval
+
+Observed current result from the generated report:
+
+- 4/4 sanity queries improved anchor quality
+- 1/4 sanity queries improved doc narrowing from no doc scope to the expected doc scope
+
+That is a good fit for the actual shipped feature, because the feature is an analysis-time graph assist, not a ranking rewrite.
+
+## 6. Revised engineering assessment after the upgrade
+
+### Stronger than before
+
+- The graph builder is still deterministic, but now materially more useful.
+- The section hierarchy is now explicit enough to support navigation-oriented use cases.
+- The graph now affects real runtime behavior in a narrow and inspectable way.
+- The runtime graph hook respects the repo’s retriever abstraction by operating before retrieval rather than inside backend-specific ranking code.
+- The Neo4j export path is slightly more correct because property serialization is now real JSON.
+
+### Still true limitations
+
+- This is still not a graph-native RAG system.
+- Neo4j is still not part of the live LangGraph path.
+- `candidate_section_ids` are still observational/debug signals, not retrieval constraints.
+- The graph does not yet support section-reference edges, near-algorithm edges, or richer cross-entity semantics.
+- The runtime graph usage is intentionally limited to definition-mode analysis, not general question answering.
+
+### Bottom-line status
+
+The graph subsystem has moved from:
+
+- offline sidecar only
+
+to:
+
+- deterministic graph sidecar
+- plus a narrow JSONL-backed lookup layer in the LangGraph analyze-query step
+
+It has not moved to:
+
+- Neo4j-backed runtime querying
+- graph-aware retrieval ranking
+- graph-driven answer synthesis
+
+That is the honest, repo-grounded way to describe the current implementation.

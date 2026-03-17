@@ -11,7 +11,7 @@ This skill turns “build a RAG agent” into a week-long, recruiter-legible min
 deterministic pipeline, citation-first answers, bounded agent loops, and eval-driven iteration.
 
 ## Always do first (no exceptions)
-1) Read `project_overview.md`, `week3_plan.md` and `week3_progress.md` to anchor scope, milestones, and contracts.
+1) Read `project_overview.md` to anchor scope, milestones, and contracts.
 2) Inspect current repo structure (don’t guess filenames).
 3) Identify the *smallest* change that advances the current milestone.
 

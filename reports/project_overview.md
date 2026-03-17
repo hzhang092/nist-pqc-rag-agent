@@ -1,311 +1,183 @@
-# Project Overview — nist-pqc-rag-agent
+# Project Overview — Secure Agentic Document Intelligence Platform
 
-## Why this exists
+## Why this project exists
 
-This repo builds a citation-grounded, agentic RAG assistant over NIST Post-Quantum Cryptography (PQC) documents. It answers questions with page-cited evidence, can use tools (retrieve, summarize, compare), and includes an evaluation harness so changes are measured rather than described informally.
+This project builds a production-oriented AI system for querying dense technical and compliance documents with grounded citations, agentic workflows, structured evaluation, and secure deployment practices.
 
-The project is intentionally scoped to align with AI/ML roles that emphasize agentic RAG, retrieval quality, deterministic pipelines, NLP/data processing, and evaluation discipline.
+The current seed domain is NIST post-quantum cryptography standards, but the architecture is intentionally designed to generalize to enterprise technical corpora such as security standards, internal policy documents, architecture specs, regulatory guidance, and product manuals. The goal is not just to answer questions, but to do so in a way that is measurable, auditable, and useful inside real engineering workflows.
 
-## Timeline anchor
+## What this project is meant to demonstrate
 
-### Week 1 goal — working citation-grounded RAG baseline
+This project is designed to show the skills employers repeatedly ask for in AI engineer and ML intern roles:
 
-Build a compact, recruiter-legible mini system with:
+* building LLM-powered applications rather than isolated notebook experiments
+* creating reliable retrieval and agent pipelines over complex technical text
+* exposing AI capabilities through backend APIs and containerized services
+* evaluating quality with repeatable metrics, traces, and regression checks
+* organizing technical knowledge with graph-based structure and runtime metadata
+* thinking about security, failure modes, and operational readiness
 
-- deterministic ingestion, cleaning, and chunking
-- hybrid retrieval (`FAISS + BM25 + query fusion + RRF`)
-- citation-first answer generation with refusal behavior
-- a bounded LangGraph controller
-- a reproducible evaluation baseline
+## Current foundation already implemented
 
-### Week 2 progress — completed work actually shipped
+The current system already includes a strong applied-AI base:
 
-Week 2 should be described as completed progress, not as a future roadmap.
+* deterministic PDF ingestion with parser abstraction and artifact versioning
+* structure-aware chunking tailored to technical PDFs with algorithms, tables, notation, and identifier-heavy text
+* hybrid retrieval using dense search and lexical search with fusion and conservative reranking
+* citation-first answer generation with validation and refusal when evidence is insufficient
+* a bounded LangGraph agent path with inspectable traces and controlled refinement
+* FastAPI endpoints for search and question answering
+* Dockerized local serving and rebuild workflows
+* retrieval evaluation with Recall@k, MRR, nDCG, and per-question diagnostics
+* a graph-lite knowledge layer with Neo4j export and a narrow graph-assisted query-analysis hook
 
-#### Day 1 — ingestion / chunking upgrade
+## Core technical problem
 
-Implemented and validated:
+Enterprise and standards-heavy documents are difficult for generic LLM workflows because they contain:
 
-- parser abstraction with dual backends (`llamaparse` and `docling`)
-- markdown-aware chunking v2 behind `CHUNKER_VERSION`
-- manifest-based artifact versioning and retriever compatibility checks
-- deterministic ingestion controls, preflight checks, and chunk-structure hardening
+* hierarchical section structure
+* algorithms and procedures
+* exact identifiers and symbol-heavy terminology
+* dense definitions and cross-references
+* high precision requirements where unsupported answers are costly
 
-Important status note:
+A useful system for this setting must combine deterministic preprocessing, semantic plus lexical retrieval, citation-preserving metadata, explicit answer validation, and bounded agent reasoning.
 
-- the safe default parser remains `llamaparse`
-- chunking v2 exists and was hardened, but conservative rollout principles still apply when selecting defaults
+## End-to-end architecture
 
-#### Day 2 — retrieval recovery and rerank fix
+```text
+Raw PDFs / technical docs
+  -> parse + normalize
+  -> clean + structure-aware chunking
+  -> embeddings + lexical index
+  -> hybrid retrieval
+  -> optional graph-assisted query analysis
+  -> bounded agent orchestration
+  -> citation-enforced answer generation
+  -> validation / refusal / repair
+  -> evaluation + traces + deployment surface
+```
 
-Implemented and validated:
+## Major implemented components
 
-- stage-aware retrieval diagnostics to localize where gold evidence is lost
-- identifier-scoped normalization for index/query symmetry
-- deterministic, intent-aware do-no-harm reranker
-- stricter rerank diagnostics and safer default behavior
+### 1) Deterministic document pipeline
 
-Best recovered run from Week 2 Day 2:
+The ingestion path converts raw PDFs into stable JSONL artifacts with page coverage checks, parser abstraction, and manifest/versioning support. This makes retrieval and evaluation reproducible instead of ad hoc.
 
-- Recall@8: `0.6548`
-- nDCG@8: `0.4334`
-- MRR@8: `0.3755`
+### 2) Structure-aware NLP for technical documents
 
-Recommended Week 2 retrieval default from the report:
+The chunking layer is designed for standards-style text rather than generic prose. It preserves section paths, page spans, algorithms, tables, and math-like blocks so retrieval can localize evidence more precisely.
 
-- keep the intent-aware do-no-harm reranker enabled
-- keep mode-aware query-variant expansion disabled by default unless revalidated under current pool limits
+### 3) Hybrid retrieval engine
 
-### Week 3 goal — turn the project into a small deployable internal AI system
+The retrieval layer combines semantic search and lexical search, then merges candidates through fusion and conservative reranking. This helps on both natural-language questions and identifier-heavy queries such as algorithm names, section references, and operation names.
 
-Week 3 is the forward-looking plan.
+### 4) Grounded answer generation
 
-Primary objective:
+The system generates answers only from retrieved evidence and validates citation formatting locally. If support is too weak or citations fail validation, the system refuses rather than pretending certainty.
 
-Turn the NIST PQC RAG assistant into a more recruiter-legible ML engineering project by adding:
+### 5) Agentic query handling
 
-- a local/on-prem style serving path
-- FastAPI endpoints and Docker packaging
-- stronger agent query analysis and retrieval plumbing
-- answer-side citation repair / refusal robustness
-- one concise before/after ablation artifact
-- a scoped graph-lite knowledge organization layer
+A bounded LangGraph controller supports analyze → retrieve → assess → refine → answer → verify/refuse behavior. The point is not open-ended autonomy; it is controlled reasoning that stays inspectable and testable.
 
-## Current project state after Week 2
+### 6) API and containerized serving
 
-What is already demonstrated:
+The project exposes search and QA capabilities through a FastAPI service and Docker-based runtime, making it look and behave more like an internal AI platform than a research script.
 
-- deterministic ingestion -> cleaning -> chunking -> indexing
-- hybrid retrieval with fusion and measured rerank recovery
-- citation-first answering with refusal guardrails
-- bounded LangGraph orchestration
-- reproducible retrieval evaluation with diagnostics
-- structure-aware processing tailored to standards-style technical PDFs
+### 7) Evaluation and debugging
 
-What is still under-signaled relative to stronger ML engineering roles:
+The system includes retrieval metrics, per-question diagnostics, trace artifacts, and ablation-ready comparisons so model or pipeline changes can be justified with evidence.
 
-- deployment and packaging
-- API surface and demo ergonomics
-- explicit query-analysis node and better agent traces
-- answer-side robustness when retrieval succeeds but citation generation fails
-- graph / knowledge-organization story
-- security-adjacent runbook and deployment assumptions
+### 8) Knowledge organization layer
 
-## Why this corpus is a good RAG testbed
+The graph subsystem extracts document, section, algorithm, and term structure into a graph-lite artifact with Neo4j export. It currently supports a narrow graph-assisted analyze-query flow and creates a clear path toward richer graph-aware retrieval and navigation.
 
-The NIST PQC corpus is not generic prose. It contains:
+## Repositioned objective for the next stage
 
-- dense technical definitions
-- algorithms and stepwise procedures
-- tables, notation, and math-like spans
-- exact identifiers and operation names
-- cross-references by section, table, and algorithm number
+The next stage of the project is to turn the current NIST PQC assistant into a broader **secure agentic document intelligence platform** for technical and compliance-heavy environments.
 
-That means the project needs:
+That next stage focuses on six upgrades:
 
-- structure-aware chunking
-- lexical + semantic retrieval together
-- careful identifier handling
-- citation-preserving page metadata
-- evaluation that distinguishes document-family retrieval from exact localization
+### A. Multi-corpus enterprise support
 
-## Core user stories
+Extend beyond the six NIST seed documents to support mixed corpora such as standards, internal runbooks, security policies, design docs, and operating procedures. Add document families, metadata filters, and corpus routing.
 
-- As a user, I can ask: “What does FIPS 203 specify for ML-KEM key generation?” and receive a concise cited answer.
-- As a user, I can ask: “How do ML-DSA and SLH-DSA differ in intended use-cases?” and receive a structured cited comparison.
-- As a developer, I can run eval and inspect whether a change improved retrieval and answer behavior on a fixed set.
-- As an engineer, I can inspect deterministic artifacts and trace why the system answered or refused.
+### B. Stronger agent workflows
 
-## Document scope
+Move from “retrieve then answer” toward more deliberate query planning:
 
-Included in core scope:
+* structured query analysis
+* task-aware routing
+* required-anchor extraction
+* compare/definition/algorithm specialized flows
+* clearer trace summaries and failure categories
 
-- FIPS 203 (ML-KEM)
-- FIPS 204 (ML-DSA)
-- FIPS 205 (SLH-DSA)
-- SP 800-227
-- NIST IR 8545
-- NIST IR 8547
+### C. Graph-assisted retrieval and navigation
 
-Optional documents should remain outside default eval scope unless explicitly promoted.
+Promote the current graph-lite layer from a sidecar into a higher-value retrieval aid:
 
-## Non-goals
+* graph-assisted anchor expansion
+* section-constrained retrieval
+* algorithm/term neighborhood lookup
+* document navigation endpoints
+* Neo4j-backed exploratory queries for offline analysis and demos
 
-These remain outside the honest current scope:
+### D. Evaluation and LLMOps
 
-- cryptographic proof-level guarantees
-- full LLM fine-tuning pipeline
-- full production auth / multi-tenant system design
-- perfect PDF parsing across every edge case
-- full knowledge graph platform
-- cloud-native production deployment in the current state
+Add a more explicit reliability layer:
 
-## System architecture (high level)
+* citation compliance rate
+* refusal reason breakdown
+* latency and cost metrics
+* regression datasets for definition, compare, and algorithm questions
+* automated smoke tests in CI
+* answer-quality dashboards or markdown reports for every major change
 
-Pipeline:
+### E. Deployment and MLOps readiness
 
-`PDFs -> parse -> clean -> structured chunks -> embed/index -> hybrid retrieval -> citation-first generation -> verify/refuse -> evaluation`
+Strengthen the operational story with:
 
-### LangChain / LangGraph role
+* cached model/retriever loading
+* cloud-ready configuration
+* CI/CD for tests and container builds
+* optional pgvector or SQL-backed persistence
+* environment validation and secrets hygiene
+* reproducible local and cloud deployment notes
 
-LangChain is used for:
+### F. Security-oriented AI engineering
 
-- model and structured-output interfaces
-- tool definitions
-- retriever and agent plumbing where useful
+Because the corpus is security-adjacent, the platform should visibly include:
 
-LangGraph is used for a bounded controller:
+* allowlisted document sources
+* auditable trace logs
+* explicit trust boundaries
+* safer refusal behavior
+* documented assumptions around evidence provenance
+* a basic threat-model and secure-runbook section
 
-- retrieve -> assess evidence -> optional refine/retrieve -> answer -> verify/refuse
+## Practical scope for employers
 
-Design principle:
+This project now tells a stronger story than “I built a RAG chatbot.”
 
-- ingestion, chunking, and evaluation stay framework-independent through deterministic JSONL contracts
-- the agent layer is bounded and inspectable rather than open-ended
+It says:
 
-## Implemented components after Week 2
+* I can build deterministic NLP and retrieval pipelines over hard technical documents.
+* I can combine LLMs with software engineering, APIs, and deployment.
+* I can evaluate AI systems instead of only demoing them.
+* I understand agent workflows, grounded generation, and failure handling.
+* I can organize domain knowledge with graph-based structure.
+* I can think about security, traceability, and operational quality.
 
-### 1) Ingestion (deterministic, parser-abstracted)
+## Honest current limitations
 
-- input: raw PDFs
-- output: `data/processed/pages.jsonl`
-- parser abstraction supports `llamaparse` and `docling`
-- current conservative default remains `llamaparse`, with `docling` available for controlled use and ablation
-- page-count and page-coverage checks protect citation mapping
+To stay credible in interviews, I would keep these boundaries explicit:
 
-### 2) Cleaning
+* the graph layer is useful but still not a full graph-native retriever
+* Neo4j exists as an export/demo path more than a live serving dependency
+* full cloud-native deployment and Kubernetes depth are not yet the strongest part of the project
+* large-scale fine-tuning is not yet the central contribution
+* the project is strongest in retrieval, document processing, grounding, and evaluation discipline
 
-- removes repeated boilerplate and whitespace issues
-- preserves technical content needed for retrieval
+## One-sentence positioning for interviews
 
-### 3) Chunking
-
-- page-level citation spans are preserved on every chunk
-- v1 remains available for stable fallback
-- v2 adds structure-aware splitting and metadata such as `section_path`, `block_type`, and `chunker_version`
-- chunking work is tailored to technical PDFs containing algorithms, tables, and math-like content
-
-### 4) Indexes
-
-- FAISS vector index for semantic retrieval
-- BM25 artifacts for lexical matching
-- chunk store with stable chunk/page metadata
-
-### 5) Retrieval
-
-- deterministic query fusion + RRF
-- optional reranking now upgraded with a do-no-harm, intent-aware policy
-- retrieval diagnostics can identify whether misses occur upstream, outside rerank pool, or during reranking
-
-### 6) Answer generation
-
-- citation-first answers
-- explicit refusal when support is insufficient or citation requirements fail
-- answer reliability is still stronger on retrieval than on answer-side recovery, which is a Week 3 target
-
-### 7) Agent orchestration
-
-- bounded LangGraph controller
-- explicit budgets for steps / retrieval rounds / tool calls
-- inspectable traces and refusal reasons
-- further query-analysis strengthening is planned for Week 3
-
-## Evaluation harness
-
-The eval harness supports:
-
-- Recall@k, MRR, nDCG
-- strict and near-page retrieval checks
-- per-question diagnostics
-- fixed-set before/after comparisons
-
-Week 2 changed the project from “we think reranking is the issue” to “we can localize failure stages and show measured recovery.”
-
-## Milestone status
-
-### Milestone 1 — Deterministic ingestion / cleaning / chunking / indexing
-
-Status: complete
-
-### Milestone 2 — Citation-first RAG answers
-
-Status: complete at baseline level
-
-### Milestone 3 — Bounded LangGraph controller
-
-Status: complete at baseline level
-
-### Milestone 4 — Week 2 upgrade
-
-Status: complete for the two shipped items:
-
-- structure-aware chunking / ingestion hardening
-- retrieval recovery via rerank diagnostics and fix
-
-### Milestone 5 — Week 3 upgrade
-
-Status: next iteration
-
-See `week3_plan.md` for the forward-looking execution plan.
-
-## Week 3 roadmap summary
-
-Week 3 should prioritize the highest-signal gaps for ML engineering roles within one week:
-
-1. productize the system with FastAPI + Docker + a local/on-prem style serving path
-2. strengthen the agent story with explicit query analysis and real `mode_hint` plumbing
-3. improve answer-side robustness with citation repair and clearer refusal categories
-4. publish one concise ablation report
-5. add a scoped graph-lite layer for knowledge organization
-
-## What this project still will not fully cover, and how to work toward it
-
-These are the major skill gaps that will still remain even after a strong Week 3.
-
-### 1) Full LLM fine-tuning / embedding-model training
-
-The project can show strong retrieval and answer engineering, but it still will not honestly represent substantial post-training work by itself.
-
-Practical next step:
-
-- run one narrow LoRA/QLoRA or reranker fine-tuning experiment on a fixed eval-derived task
-- report dataset, objective, baseline, and measured delta
-
-### 2) Real graph databases and query languages (`Neo4j`, `Cypher`, `SQL`)
-
-A graph-lite layer is useful, but it is not the same as a true graph database workflow.
-
-Practical next step:
-
-- export graph-lite entities/relations into Neo4j
-- write a small set of Cypher queries over standards entities
-- add PostgreSQL + pgvector as a persistent retrieval backend to strengthen SQL relevance
-
-### 3) Docker / Kubernetes / cloud-native deployment depth
-
-Docker is realistic in the near term. Full Kubernetes or GCP depth is not yet honestly covered.
-
-Practical next step:
-
-- deploy the API container once to a minimal local or cloud environment
-- keep the story concrete and reproducible instead of broad
-
-### 4) Production MLOps depth
-
-This project can show evaluation discipline, packaging, and clean contracts, but not a full MLOps platform.
-
-Practical next step:
-
-- add CI smoke tests
-- log retrieval/answer metrics
-- introduce workflow tooling only when there is a real operational need
-
-### 5) Security engineering integration beyond basic secure-coding hygiene
-
-The project is domain-aligned with PQC and security, but that is not the same as proving deep security-systems integration.
-
-Practical next step:
-
-- add a short threat-model note
-- document trust boundaries, secret handling, and evidence-source assumptions
-- add a simple repo security checklist
+“I built a secure, citation-grounded, agentic document intelligence system for dense technical standards, with deterministic ingestion, hybrid retrieval, LangGraph orchestration, evaluation harnesses, API serving, Docker packaging, and an extensible graph-based knowledge layer.”

@@ -1,26 +1,40 @@
-# AGENTS.md — nist-pqc-rag-agent (project rules for coding agents)
+# AGENTS.md
 
-Codex should read `reports/project_overview.md` first and treat it as the source of truth for scope, milestones, and data contracts.
+## Mission
+Evolve this repo from a strong local-first technical RAG system into a recruiter-legible AI engineering project for AI engineer / ML intern roles.
 
-## Week-1 scope guardrails
-- Do NOT widen document scope (keep optional PDFs optional) unless explicitly asked.
-- Prioritize: deterministic ingestion → structure-aware chunking → hybrid retrieval + fusion → bounded LangGraph agent → eval harness.
-- Any “improvement” must be backed by eval deltas (not vibes).
+## Current truth
+This repo already has:
+- deterministic PDF ingestion and artifact versioning
+- structure-aware chunking for technical NIST documents
+- hybrid retrieval (FAISS + BM25 + RRF + conservative rerank)
+- citation-enforced answer generation with refusal behavior
+- bounded LangGraph agent flow
+- FastAPI endpoints and Dockerized local serving
+- graph-lite sidecar and narrow graph-assisted analyze-query support
 
-## Data contracts (do not break silently)
-- Preserve page-level citations: every chunk must include `doc_id`, `start_page`, `end_page`.
-- JSONL artifacts must be stable/deterministic (stable ordering, stable chunk IDs).
+## Do not misrepresent
+- Do not describe Neo4j as a live runtime dependency unless code actually uses it in retrieval or answering.
+- Do not claim cloud-native production deployment unless implemented and tested.
+- Do not claim full KG-based RAG unless graph retrieval is actually wired into user-facing flows.
 
-## Engineering preferences
-- Keep retrieval backends swappable via a tiny interface (Retriever Protocol + ChunkHit schema).
-- Prefer minimal, testable diffs. Add at least one sanity check when changing pipeline behavior.
-- Avoid introducing heavy new dependencies unless essential.
+## High-priority future work
+Prefer changes that improve hiring signal for AI engineer / ML intern roles:
+1. measurable eval and regression infrastructure
+2. stronger agent planning / query analysis
+3. graph-assisted retrieval in one real user-facing flow
+4. deployment and persistence improvements
+5. observability, latency, failure analysis
+6. safe, honest documentation and demoability
 
-## How to validate changes (choose what exists in-repo)
-- If present, run: `python -m rag.search_faiss "ML-KEM key generation"` (or `python rag/search_faiss.py ...`)
-- If present, run eval: `python -m eval.run` (or `python eval/run.py`)
-- When unsure, inspect repo tree and existing entrypoints before assuming commands.
+## Change rules
+- Preserve deterministic artifacts and citation integrity.
+- Keep changes bounded and testable.
+- Update tests, eval artifacts, and docs with every meaningful behavior change.
+- Prefer minimal, high-confidence edits over broad rewrites.
 
-## Output expectations
-- When answering PQC questions: no factual claims without citations.
-- When coding: provide file-by-file patches and explain how to run/verify.
+## Before finishing a task
+- run relevant tests
+- note tradeoffs
+- state what was not implemented
+- avoid overclaiming

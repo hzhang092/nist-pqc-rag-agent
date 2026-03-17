@@ -37,6 +37,29 @@ def _rich_compare_state() -> dict:
         "analysis_notes": "deterministic-fallback",
         "answer_prompt_question": "What are the differences between ML-KEM and ML-DSA?",
         "query_analysis": {},
+        "graph_lookup": {
+            "lookup_type": "algorithm_name",
+            "lookup_value": "ML-KEM.KeyGen",
+            "matched": True,
+            "match_reason": "exact_algorithm_name",
+            "candidate_doc_ids": ["NIST.FIPS.203"],
+            "candidate_section_ids": ["section::NIST.FIPS.203::7.1 ML-KEM Key Generation"],
+            "required_anchors": ["ML-KEM.KeyGen"],
+            "matched_entities": [
+                {
+                    "node_id": "alg::NIST.FIPS.203::19",
+                    "display_name": "Algorithm 19",
+                    "doc_id": "NIST.FIPS.203",
+                    "algorithm_label": "Algorithm 19",
+                    "algorithm_name": "ML-KEM.KeyGen",
+                    "algorithm_number": "19",
+                    "section_id": "section::NIST.FIPS.203::7.1 ML-KEM Key Generation",
+                }
+            ],
+            "ambiguous": False,
+            "fallback_used": False,
+            "applied_doc_ids": ["NIST.FIPS.203"],
+        },
         "plan": {"action": "retrieve", "reason": "test", "query": "ML-KEM vs ML-DSA", "args": {}, "mode_hint": "compare"},
         "evidence": [
             {
@@ -80,6 +103,19 @@ def _rich_compare_state() -> dict:
         "trace": [
             {"type": "step", "node": "analyze_query", "steps": 1, "tool_calls": 0, "retrieval_round": 0},
             {
+                "type": "graph_lookup_applied",
+                "lookup_type": "algorithm_name",
+                "matched": True,
+                "match_reason": "exact_algorithm_name",
+                "lookup_value": "ML-KEM.KeyGen",
+                "candidate_doc_ids": ["NIST.FIPS.203"],
+                "candidate_section_ids": ["section::NIST.FIPS.203::7.1 ML-KEM Key Generation"],
+                "required_anchors": ["ML-KEM.KeyGen"],
+                "ambiguous": False,
+                "fallback_used": False,
+                "applied_doc_ids": ["NIST.FIPS.203"],
+            },
+            {
                 "type": "analysis",
                 "mode_hint": "compare",
                 "rewrite_needed": True,
@@ -113,6 +149,8 @@ def _rich_compare_state() -> dict:
                     "ML-DSA intended use-cases and deployment context",
                 ],
                 "protected_spans": ["ML-KEM", "ML-DSA"],
+                "candidate_section_ids_count": 1,
+                "section_prior_applied": False,
                 "timing_ms_retrieve": 5.2,
             },
             {"type": "step", "node": "assess_evidence", "steps": 4, "tool_calls": 1, "retrieval_round": 1},
@@ -163,6 +201,8 @@ def _rich_compare_state() -> dict:
                     "ML-DSA intended use-cases and deployment context",
                 ],
                 "protected_spans": ["ML-KEM", "ML-DSA"],
+                "candidate_section_ids_count": 1,
+                "section_prior_applied": True,
                 "timing_ms_retrieve": 4.8,
             },
             {"type": "step", "node": "assess_evidence", "steps": 7, "tool_calls": 2, "retrieval_round": 2},
@@ -288,8 +328,12 @@ def test_summarize_trace_normalizes_legacy_verify_and_groups_rounds():
     assert summary["retrieval_summary"][0]["assessment_reasons"] == ["one_sided_comparison"]
     assert summary["retrieval_summary"][0]["refinement"]["strategy"] == "comparison-bias"
     assert summary["retrieval_summary"][1]["sufficient"] is True
+    assert summary["retrieval_summary"][1]["section_prior_applied"] is True
     assert summary["answer_summary"]["result"] == "ok"
     assert summary["answer_summary"]["citation_keys"] == ["c1", "c2"]
+    assert summary["run"]["graph_lookup"]["lookup_type"] == "algorithm_name"
+    assert summary["run"]["graph_lookup"]["candidate_section_ids_count"] == 1
+    assert summary["analysis"]["graph_lookup"]["lookup_value"] == "ML-KEM.KeyGen"
 
 
 def test_summarize_trace_accepts_legacy_dict_compare_gap_payload():

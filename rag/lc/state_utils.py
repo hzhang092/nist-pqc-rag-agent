@@ -64,6 +64,7 @@ def init_state(
     *,
     k: Optional[int] = None,
     use_graph_lookup: bool = True,
+    use_section_priors: bool = True,
 ) -> AgentState:
     return {
         "question": question,
@@ -84,6 +85,7 @@ def init_state(
         "answer_prompt_question": question,
         "query_analysis": {},
         "graph_lookup_enabled": bool(use_graph_lookup),
+        "graph_section_priors_enabled": bool(use_section_priors),
         "graph_lookup": {},
         "request_k": int(k) if k is not None else 0,
         "evidence": [],

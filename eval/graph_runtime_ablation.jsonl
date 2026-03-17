@@ -1,0 +1,12 @@
+{"qid":"graph-runtime-001","category":"algorithm_ambiguous","question":"What are the steps in Algorithm 19?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":44,"end_page":45},{"doc_id":"NIST.FIPS.205","start_page":45,"end_page":45}]}
+{"qid":"graph-runtime-002","category":"algorithm_scoped","question":"What are the steps in Algorithm 19 in FIPS 203?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":44,"end_page":45}]}
+{"qid":"graph-runtime-003","category":"algorithm_name","question":"What does ML-KEM.KeyGen do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":44,"end_page":45}]}
+{"qid":"graph-runtime-004","category":"algorithm_name","question":"What does ML-KEM.Encaps do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":46,"end_page":46}]}
+{"qid":"graph-runtime-005","category":"algorithm_name","question":"What does ML-KEM.Decaps do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":47,"end_page":47}]}
+{"qid":"graph-runtime-006","category":"algorithm_name","question":"What does ML-DSA.Sign do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.204","start_page":28,"end_page":28}]}
+{"qid":"graph-runtime-007","category":"algorithm_fallback","question":"What does ML-DSA.KeyGen do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.204","start_page":27,"end_page":27}]}
+{"qid":"graph-runtime-008","category":"algorithm_name","question":"What does slh_sign_internal do?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.205","start_page":45,"end_page":45}]}
+{"qid":"graph-runtime-009","category":"definition_control","question":"What is little-endian?","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":11,"end_page":13}]}
+{"qid":"graph-runtime-010","category":"definition_control","question":"Define encapsulation.","answerable":true,"gold_spans":[{"doc_id":"NIST.FIPS.203","start_page":11,"end_page":13}]}
+{"qid":"graph-runtime-011","category":"negative","question":"What are the steps in Algorithm 999?","answerable":false,"gold_spans":[]}
+{"qid":"graph-runtime-012","category":"negative","question":"What does ML-DSA.Encrypt do?","answerable":false,"gold_spans":[]}

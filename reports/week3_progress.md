@@ -188,6 +188,38 @@ Behavior after this update:
 - FastAPI now exposes `/ask-agent`
 - direct `/ask` remains the unchanged control path
 
+## 2026-03-16 - Graph runtime upgrade: algorithm lookup + section priors
+
+### Goal
+Promote graph-lite from a definition-only analyze-query helper into one bounded runtime feature that measurably affects `/ask-agent`, while keeping `/ask` unchanged and keeping Neo4j out of the serving path.
+
+### Implementation
+- added `lookup_algorithm(...)` in `rag/graph/query.py` with:
+  - exact algorithm-name matching
+  - exact `Algorithm N` matching
+  - scoped multi-match behavior for ambiguous bare algorithm numbers
+  - deterministic term fallback for identifier-only queries such as `ML-DSA.KeyGen`
+- replaced the definition-only graph hook in `rag/lc/graph.py` with a mode-aware graph lookup step for:
+  - `definition`
+  - `algorithm`
+- threaded `candidate_section_ids` into planner retrieval only and used them as soft section-aware rerank priors in `rag/retrieve.py`
+- extended `/ask-agent` summaries so:
+  - `trace_summary` includes a compact `graph_lookup` block
+  - `analysis` includes the full structured `graph_lookup` payload
+- kept direct `/ask` unchanged as the runtime control path
+
+### Scope boundaries
+- Neo4j remains a dev/debug/export surface rather than a live dependency
+- graph signals bias retrieval inside the bounded agent path only; they do not replace hybrid retrieval
+- no new extraction pass or offline LLM-driven graph expansion was added in this update
+
+### Eval and artifacts
+- added a focused graph-runtime eval slice at `eval/graph_runtime_ablation.jsonl`
+- added `python -m eval.graph_runtime_ablation --out <path>` to compare:
+  - direct `/ask`
+  - `/ask-agent` with graph lookup only
+  - `/ask-agent` with graph lookup plus section priors
+
 ### Implementation
 
 #### 1) Query analysis state and schema

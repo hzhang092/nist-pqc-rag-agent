@@ -8,6 +8,7 @@ These tests verify the core components of the hybrid retrieval strategy:
   BM25-like score to the fused results to fine-tune the ranking based on
   term frequency.
 """
+import rag.retrieve as retrieve_module
 from rag.retrieve import rerank_fused_hits, rrf_fuse
 from rag.retriever.base import ChunkHit
 
@@ -143,3 +144,36 @@ def test_rerank_definition_acronym_anchor_mlwe():
         mode_hint="definition",
     )
     assert [h.chunk_id for h in ranked] == ["a", "b"]
+
+
+def test_rerank_section_prior_promotes_matching_section(monkeypatch):
+    hits = [
+        ChunkHit(0.4, "a", "DOC", 1, 1, "chunk-a"),
+        ChunkHit(0.3, "b", "DOC", 2, 2, "chunk-b"),
+    ]
+    bm25 = _FakeBM25({"chunk-a": 1.0, "chunk-b": 1.0})
+    monkeypatch.setattr(
+        retrieve_module,
+        "_chunk_metadata_map",
+        lambda: {
+            "a": {"doc_id": "DOC", "section_path": "1. Intro"},
+            "b": {
+                "doc_id": "DOC",
+                "section_path": "7.1 ML-KEM Key Generation > Algorithm 19 ML-KEM.KeyGen ()",
+            },
+        },
+    )
+
+    debug = {}
+    ranked = rerank_fused_hits(
+        query="Algorithm 19",
+        hits=hits,
+        top_k=2,
+        bm25=bm25,
+        mode_hint="algorithm",
+        candidate_section_ids=["section::DOC::7.1 ML-KEM Key Generation > Algorithm 19 ML-KEM.KeyGen ()"],
+        debug_out=debug,
+    )
+
+    assert [h.chunk_id for h in ranked] == ["b", "a"]
+    assert debug["section_prior_applied"] is True

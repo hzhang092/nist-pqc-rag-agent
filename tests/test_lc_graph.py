@@ -154,8 +154,86 @@ def test_node_analyze_query_applies_definition_graph_lookup(monkeypatch):
     assert out["doc_ids"] == ["NIST.FIPS.203"]
     assert out["required_anchors"] == ["encapsulation"]
     graph_event = next(event for event in out["trace"] if event.get("type") == "graph_lookup_applied")
+    assert graph_event["lookup_type"] == "term"
+    assert graph_event["lookup_value"] == "encapsulation"
     assert graph_event["candidate_section_ids"] == ["section::NIST.FIPS.203::2. Terms and Definitions"]
     assert graph_event["applied_doc_ids"] == ["NIST.FIPS.203"]
+
+
+def test_node_analyze_query_applies_algorithm_graph_lookup_and_keeps_ambiguity(monkeypatch):
+    monkeypatch.setattr(
+        g,
+        "_build_query_analysis",
+        lambda question: QueryAnalysis(
+            original_query=question,
+            canonical_query="What are the steps in Algorithm 19?",
+            mode_hint="algorithm",
+            rewrite_needed=False,
+            protected_spans=["Algorithm 19"],
+            required_anchors=["Algorithm 19"],
+            sparse_query="Algorithm 19",
+            dense_query="steps for Algorithm 19",
+            subqueries=[],
+            confidence=0.77,
+            compare_topics=None,
+            doc_ids=[],
+            doc_family=None,
+            analysis_notes="test",
+            answer_prompt_question=question,
+        ),
+    )
+    monkeypatch.setattr(
+        g,
+        "lookup_algorithm",
+        lambda query, doc_ids=None: {
+            "lookup_type": "algorithm_number",
+            "lookup_value": "Algorithm 19",
+            "matched_entities": [
+                {
+                    "node_id": "alg::NIST.FIPS.203::19",
+                    "display_name": "Algorithm 19",
+                    "doc_id": "NIST.FIPS.203",
+                    "algorithm_label": "Algorithm 19",
+                    "algorithm_name": "ML-KEM.KeyGen",
+                    "algorithm_number": "19",
+                    "section_id": "section::NIST.FIPS.203::7.1 ML-KEM Key Generation",
+                },
+                {
+                    "node_id": "alg::NIST.FIPS.205::19",
+                    "display_name": "Algorithm 19",
+                    "doc_id": "NIST.FIPS.205",
+                    "algorithm_label": "Algorithm 19",
+                    "algorithm_name": "slh_sign_internal",
+                    "algorithm_number": "19",
+                    "section_id": "section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation",
+                },
+            ],
+            "candidate_doc_ids": ["NIST.FIPS.203", "NIST.FIPS.205"],
+            "candidate_section_ids": [
+                "section::NIST.FIPS.203::7.1 ML-KEM Key Generation",
+                "section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation",
+            ],
+            "required_anchors": ["Algorithm 19"],
+            "match_reason": "exact_algorithm_number",
+            "ambiguous": True,
+            "fallback_used": False,
+        },
+    )
+
+    state = init_state("What are the steps in Algorithm 19?", use_graph_lookup=True)
+    out = g.node_analyze_query(state)
+
+    assert out["doc_ids"] == ["NIST.FIPS.203", "NIST.FIPS.205"]
+    assert out["required_anchors"] == ["Algorithm 19"]
+    assert out["graph_lookup"]["ambiguous"] is True
+    graph_event = next(event for event in out["trace"] if event.get("type") == "graph_lookup_applied")
+    assert graph_event["lookup_type"] == "algorithm_number"
+    assert graph_event["lookup_value"] == "Algorithm 19"
+    assert graph_event["ambiguous"] is True
+    assert graph_event["candidate_section_ids"] == [
+        "section::NIST.FIPS.203::7.1 ML-KEM Key Generation",
+        "section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation",
+    ]
 
 
 def test_node_analyze_query_skips_graph_lookup_when_disabled(monkeypatch):
@@ -296,7 +374,7 @@ def test_node_retrieve_passes_analyzed_args(monkeypatch):
                         "text": "Algorithm 2 SHAKE128 details.",
                     }
                 ],
-                "stats": {"n": 1},
+                "stats": {"n": 1, "section_prior_applied": True, "candidate_section_ids_count": 1},
                 "mode_hint": payload["mode_hint"],
             }
 
@@ -313,6 +391,9 @@ def test_node_retrieve_passes_analyzed_args(monkeypatch):
         dense_query="steps of Algorithm 2 SHAKE128 in ML-KEM standard",
         doc_ids=["NIST.FIPS.205"],
     )
+    state["graph_lookup"] = {
+        "candidate_section_ids": ["section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation"]
+    }
     state["plan"] = {
         "action": "retrieve",
         "reason": "test",
@@ -332,9 +413,14 @@ def test_node_retrieve_passes_analyzed_args(monkeypatch):
     assert captured["dense_query"] == "steps of Algorithm 2 SHAKE128 in ML-KEM standard"
     assert captured["subqueries"] == []
     assert captured["protected_spans"] == ["Algorithm 2", "SHAKE128"]
+    assert captured["candidate_section_ids"] == ["section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation"]
     assert captured["use_query_fusion"] is False
     assert captured["enable_mode_variants"] is False
     assert out["last_retrieval_stats"]["doc_ids"] == ["NIST.FIPS.205"]
+    assert out["last_retrieval_stats"]["candidate_section_ids"] == [
+        "section::NIST.FIPS.205::9.2 SLH-DSA Signature Generation"
+    ]
+    assert out["last_retrieval_stats"]["section_prior_applied"] is True
 
 
 def test_node_refine_query_uses_analyzed_state_not_raw_question():

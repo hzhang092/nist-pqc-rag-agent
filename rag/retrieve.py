@@ -21,9 +21,12 @@ How to use (CLI):
 from __future__ import annotations
 
 import argparse
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 from time import perf_counter
-from typing import Dict, Iterable, List, Literal, Sequence, TYPE_CHECKING, TypedDict
+from typing import Any, Dict, Iterable, List, Literal, Sequence, TYPE_CHECKING, TypedDict
 
 from rag.config import SETTINGS
 from rag.text_normalize import normalize_identifier_like_spans
@@ -71,6 +74,7 @@ WHAT_DOES_MEAN_RE = re.compile(
     r"what\s+does\s+(?P<term>[A-Za-z0-9][A-Za-z0-9._-]*)\s+mean",
     flags=re.IGNORECASE,
 )
+CHUNKS_PATH = Path("data/processed/chunks.jsonl")
 
 
 class RetrievalStageOutputs(TypedDict):
@@ -78,6 +82,7 @@ class RetrievalStageOutputs(TypedDict):
     pre_rerank_fused_hits: List[ChunkHit]
     post_rerank_hits: List[ChunkHit]
     rerank_pool: int
+    section_prior_applied: bool
 
 
 class RetrievalTimingSummary(TypedDict):
@@ -122,6 +127,76 @@ def _filter_hits_by_doc_ids(hits: Sequence[ChunkHit], doc_ids: Sequence[str] | N
     if not allowed:
         return list(hits)
     return [hit for hit in hits if hit.doc_id in allowed]
+
+
+@lru_cache(maxsize=1)
+def _chunk_metadata_map() -> dict[str, dict[str, str]]:
+    metadata: dict[str, dict[str, str]] = {}
+    if not CHUNKS_PATH.exists():
+        return metadata
+    with CHUNKS_PATH.open("r", encoding="utf-8") as infile:
+        for line in infile:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            chunk_id = str(row.get("chunk_id") or "")
+            if not chunk_id:
+                continue
+            metadata[chunk_id] = {
+                "doc_id": str(row.get("doc_id") or ""),
+                "section_path": str(row.get("section_path") or ""),
+            }
+    return metadata
+
+
+def _section_path_from_id(section_id: str) -> tuple[str, str]:
+    prefix = "section::"
+    if not str(section_id or "").startswith(prefix):
+        return "", ""
+    remainder = str(section_id)[len(prefix) :]
+    doc_id, separator, path = remainder.partition("::")
+    if not separator:
+        return "", ""
+    return doc_id, path
+
+
+def _normalize_section_path(path: str) -> str:
+    return normalize_identifier_like_spans(str(path or "").strip()).lower()
+
+
+def _section_prior_lookup(candidate_section_ids: Sequence[str] | None) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for section_id in candidate_section_ids or []:
+        doc_id, path = _section_path_from_id(str(section_id or ""))
+        normalized_path = _normalize_section_path(path)
+        if not doc_id or not normalized_path:
+            continue
+        out.setdefault(doc_id, [])
+        if normalized_path not in out[doc_id]:
+            out[doc_id].append(normalized_path)
+    return out
+
+
+def _section_prior_score(hit: ChunkHit, candidate_lookup: dict[str, list[str]]) -> float:
+    if not candidate_lookup:
+        return 0.0
+    candidate_paths = candidate_lookup.get(hit.doc_id, [])
+    if not candidate_paths:
+        return 0.0
+    metadata = _chunk_metadata_map().get(hit.chunk_id, {})
+    section_path = _normalize_section_path(str(metadata.get("section_path") or ""))
+    if not section_path:
+        return 0.0
+    best = 0.0
+    for candidate_path in candidate_paths:
+        if section_path == candidate_path:
+            best = max(best, 1.0)
+        elif section_path.startswith(candidate_path) or candidate_path.startswith(section_path):
+            best = max(best, 0.7)
+        elif candidate_path in section_path or section_path in candidate_path:
+            best = max(best, 0.45)
+    return best
 
 
 def _resolve_mode_hint(mode_hint: str | None, query: str) -> ModeHint:
@@ -353,6 +428,8 @@ def rerank_fused_hits(
     top_k: int,
     bm25: BM25Retriever,
     mode_hint: str | None = None,
+    candidate_section_ids: Sequence[str] | None = None,
+    debug_out: Dict[str, Any] | None = None,
 ) -> List[ChunkHit]:
     """
     Deterministic do-no-harm rerank:
@@ -367,6 +444,7 @@ def rerank_fused_hits(
     resolved_mode = _resolve_mode_hint(mode_hint, query)
     anchor_tokens = _query_anchor_tokens(query, mode_hint=resolved_mode)
     prior_w, bm25_w, anchors_w = MODE_WEIGHTS[resolved_mode]
+    section_lookup = _section_prior_lookup(candidate_section_ids)
 
     prior_scores = [float(hit.score) for hit in hits]
     prior_norm = _minmax_norm(prior_scores)
@@ -381,6 +459,11 @@ def rerank_fused_hits(
         (float(v) / float(max_overlap)) if max_overlap > 0 else 0.0
         for v in anchor_overlap
     ]
+    section_scores = [_section_prior_score(hit, section_lookup) for hit in hits]
+    section_prior_applied = any(score > 0.0 for score in section_scores)
+    if debug_out is not None:
+        debug_out["section_prior_applied"] = section_prior_applied
+        debug_out["candidate_section_ids_count"] = len(list(candidate_section_ids or []))
 
     rows = []
     for idx, hit in enumerate(hits):
@@ -389,18 +472,21 @@ def rerank_fused_hits(
             + bm25_w * bm25_norm[idx]
             + anchors_w * anchor_norm[idx]
         )
+        if section_prior_applied:
+            promotion_score += 0.18 * section_scores[idx]
         rows.append(
             {
                 "hit": hit,
                 "idx": idx,
                 "anchor_overlap": anchor_overlap[idx],
                 "bm25_norm": bm25_norm[idx],
+                "section_prior": section_scores[idx],
                 "promotion_score": float(promotion_score),
                 "promote": _passes_promotion_gate(
                     resolved_mode,
                     anchor_overlap=anchor_overlap[idx],
                     bm25_norm=bm25_norm[idx],
-                ),
+                ) or section_scores[idx] >= 0.7,
             }
         )
 
@@ -456,6 +542,7 @@ def _build_planner_hybrid_stage_outputs(
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
     doc_ids: Sequence[str] | None = None,
+    candidate_section_ids: Sequence[str] | None = None,
     faiss: "FaissRetriever | None" = None,
     bm25: BM25Retriever | None = None,
     timing_ms: RetrievalTimingSummary | None = None,
@@ -510,6 +597,7 @@ def _build_planner_hybrid_stage_outputs(
     retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
 
     rerank_elapsed_ms = 0.0
+    rerank_debug: dict[str, Any] = {}
     if enable_rerank:
         rerank_started = perf_counter()
         post_rerank_hits = rerank_fused_hits(
@@ -518,6 +606,8 @@ def _build_planner_hybrid_stage_outputs(
             top_k=fused_pool,
             bm25=bm25_retriever,
             mode_hint=resolved_mode,
+            candidate_section_ids=candidate_section_ids,
+            debug_out=rerank_debug,
         )
         rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
     else:
@@ -535,6 +625,7 @@ def _build_planner_hybrid_stage_outputs(
         "pre_rerank_fused_hits": pre_rerank_fused,
         "post_rerank_hits": post_rerank_hits,
         "rerank_pool": fused_pool,
+        "section_prior_applied": bool(rerank_debug.get("section_prior_applied", False)),
     }
 
 
@@ -555,6 +646,7 @@ def _build_planner_base_stage_outputs(
     diagnostic_pre_rerank_depth: int = 60,
     mode_hint: str | None = None,
     doc_ids: Sequence[str] | None = None,
+    candidate_section_ids: Sequence[str] | None = None,
     timing_ms: RetrievalTimingSummary | None = None,
 ) -> RetrievalStageOutputs:
     _ = protected_spans
@@ -592,6 +684,7 @@ def _build_planner_base_stage_outputs(
     retrieve_elapsed_ms = (perf_counter() - retrieve_started) * 1000.0
 
     rerank_elapsed_ms = 0.0
+    rerank_debug: dict[str, Any] = {}
     if enable_rerank:
         bm25_retriever = BM25Retriever()
         rerank_started = perf_counter()
@@ -601,6 +694,8 @@ def _build_planner_base_stage_outputs(
             top_k=fused_pool,
             bm25=bm25_retriever,
             mode_hint=resolved_mode,
+            candidate_section_ids=candidate_section_ids,
+            debug_out=rerank_debug,
         )
         rerank_elapsed_ms = (perf_counter() - rerank_started) * 1000.0
     else:
@@ -618,6 +713,7 @@ def _build_planner_base_stage_outputs(
         "pre_rerank_fused_hits": pre_rerank_fused,
         "post_rerank_hits": post_rerank_hits,
         "rerank_pool": fused_pool,
+        "section_prior_applied": bool(rerank_debug.get("section_prior_applied", False)),
     }
 
 
@@ -716,6 +812,7 @@ def _build_hybrid_stage_outputs(
         "pre_rerank_fused_hits": pre_rerank_fused,
         "post_rerank_hits": post_rerank_hits,
         "rerank_pool": fused_pool,
+        "section_prior_applied": False,
     }
 
 
@@ -752,7 +849,7 @@ def hybrid_search(
     return outputs["final_hits"]
 
 
-def execute_query_plan(
+def execute_query_plan_with_stats(
     query: str,
     *,
     canonical_query: str | None = None,
@@ -760,6 +857,7 @@ def execute_query_plan(
     dense_query: str | None = None,
     subqueries: Sequence[str] | None = None,
     protected_spans: Sequence[str] | None = None,
+    candidate_section_ids: Sequence[str] | None = None,
     k: int = SETTINGS.TOP_K,
     mode: str = SETTINGS.RETRIEVAL_MODE,
     backend: str = SETTINGS.VECTOR_BACKEND,
@@ -769,7 +867,7 @@ def execute_query_plan(
     rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
     mode_hint: str | None = None,
     doc_ids: Sequence[str] | None = None,
-) -> List[ChunkHit]:
+) -> dict[str, Any]:
     """Executes a bounded planner query for the graph path without changing the shared query API."""
     selected_mode = mode.lower().strip()
     if selected_mode == "hybrid":
@@ -788,8 +886,15 @@ def execute_query_plan(
             diagnostic_pre_rerank_depth=max(60, rerank_pool, k),
             mode_hint=mode_hint,
             doc_ids=doc_ids,
+            candidate_section_ids=candidate_section_ids,
         )
-        return outputs["final_hits"]
+        return {
+            "hits": outputs["final_hits"],
+            "stats": {
+                "section_prior_applied": bool(outputs.get("section_prior_applied", False)),
+                "candidate_section_ids_count": len(list(candidate_section_ids or [])),
+            },
+        }
     if selected_mode == "base":
         outputs = _build_planner_base_stage_outputs(
             query=query,
@@ -807,9 +912,57 @@ def execute_query_plan(
             diagnostic_pre_rerank_depth=max(60, rerank_pool, k),
             mode_hint=mode_hint,
             doc_ids=doc_ids,
+            candidate_section_ids=candidate_section_ids,
         )
-        return outputs["final_hits"]
+        return {
+            "hits": outputs["final_hits"],
+            "stats": {
+                "section_prior_applied": bool(outputs.get("section_prior_applied", False)),
+                "candidate_section_ids_count": len(list(candidate_section_ids or [])),
+            },
+        }
     raise ValueError(f"Unknown retrieval mode: {mode}")
+
+
+def execute_query_plan(
+    query: str,
+    *,
+    canonical_query: str | None = None,
+    sparse_query: str | None = None,
+    dense_query: str | None = None,
+    subqueries: Sequence[str] | None = None,
+    protected_spans: Sequence[str] | None = None,
+    candidate_section_ids: Sequence[str] | None = None,
+    k: int = SETTINGS.TOP_K,
+    mode: str = SETTINGS.RETRIEVAL_MODE,
+    backend: str = SETTINGS.VECTOR_BACKEND,
+    candidate_multiplier: int = SETTINGS.RETRIEVAL_CANDIDATE_MULTIPLIER,
+    k0: int = SETTINGS.RETRIEVAL_RRF_K0,
+    enable_rerank: bool = SETTINGS.RETRIEVAL_ENABLE_RERANK,
+    rerank_pool: int = SETTINGS.RETRIEVAL_RERANK_POOL,
+    mode_hint: str | None = None,
+    doc_ids: Sequence[str] | None = None,
+) -> List[ChunkHit]:
+    return list(
+        execute_query_plan_with_stats(
+            query=query,
+            canonical_query=canonical_query,
+            sparse_query=sparse_query,
+            dense_query=dense_query,
+            subqueries=subqueries,
+            protected_spans=protected_spans,
+            candidate_section_ids=candidate_section_ids,
+            k=k,
+            mode=mode,
+            backend=backend,
+            candidate_multiplier=candidate_multiplier,
+            k0=k0,
+            enable_rerank=enable_rerank,
+            rerank_pool=rerank_pool,
+            mode_hint=mode_hint,
+            doc_ids=doc_ids,
+        )["hits"]
+    )
 
 
 def _build_base_stage_outputs(
@@ -889,6 +1042,7 @@ def _build_base_stage_outputs(
         "pre_rerank_fused_hits": pre_rerank_fused,
         "post_rerank_hits": post_rerank_hits,
         "rerank_pool": fused_pool,
+        "section_prior_applied": False,
     }
 
 

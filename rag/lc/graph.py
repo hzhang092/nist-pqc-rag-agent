@@ -35,7 +35,7 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
         sys.path.insert(0, str(repo_root))
 
 from rag.config import SETTINGS
-from rag.graph.query import lookup_term
+from rag.graph.query import lookup_algorithm, lookup_term
 from rag.text_normalize import normalize_identifier_like_spans
 
 try:
@@ -719,37 +719,70 @@ def _merge_graph_doc_ids(existing_doc_ids: List[str], candidate_doc_ids: List[st
     return candidates or existing
 
 
-def _apply_definition_graph_lookup(
+def _graph_lookup_defaults(
+    *,
+    lookup_type: str,
+    lookup_value: str,
+    applied_doc_ids: list[str],
+    match_reason: str,
+    fallback_used: bool = False,
+) -> dict[str, Any]:
+    return {
+        "lookup_type": lookup_type,
+        "lookup_value": lookup_value,
+        "matched": False,
+        "match_reason": match_reason,
+        "candidate_doc_ids": [],
+        "candidate_section_ids": [],
+        "required_anchors": [],
+        "matched_entities": [],
+        "ambiguous": False,
+        "fallback_used": fallback_used,
+        "applied_doc_ids": list(applied_doc_ids),
+    }
+
+
+def _lookup_value_for_analysis(analysis: QueryAnalysis) -> str:
+    if analysis.mode_hint == "algorithm":
+        return analysis.original_query or analysis.canonical_query
+    return analysis.canonical_query or analysis.original_query
+
+
+def _apply_graph_lookup(
     analysis: QueryAnalysis,
     *,
     enabled: bool,
 ) -> tuple[QueryAnalysis, dict[str, Any]]:
-    if not enabled or analysis.mode_hint != "definition":
+    if not enabled or analysis.mode_hint not in {"definition", "algorithm"}:
         return analysis, {}
 
     lookup_value = analysis.canonical_query or analysis.original_query
+    lookup_type = "term" if analysis.mode_hint == "definition" else "algorithm"
     try:
-        lookup = lookup_term(lookup_value, doc_ids=list(analysis.doc_ids or []))
+        lookup = (
+            lookup_term(lookup_value, doc_ids=list(analysis.doc_ids or []))
+            if analysis.mode_hint == "definition"
+            else lookup_algorithm(_lookup_value_for_analysis(analysis), doc_ids=list(analysis.doc_ids or []))
+        )
     except Exception as exc:
-        return analysis, {
-            "matched": False,
-            "match_reason": f"lookup_error:{type(exc).__name__}",
-            "lookup_term": lookup_value,
-            "candidate_doc_ids": [],
-            "candidate_section_ids": [],
-            "required_anchors": [],
-            "matched_entities": [],
-            "applied_doc_ids": list(analysis.doc_ids or []),
-        }
+        return analysis, _graph_lookup_defaults(
+            lookup_type=lookup_type,
+            lookup_value=lookup_value,
+            applied_doc_ids=list(analysis.doc_ids or []),
+            match_reason=f"lookup_error:{type(exc).__name__}",
+        )
 
     graph_debug = {
+        "lookup_type": str(lookup.get("lookup_type") or lookup_type),
+        "lookup_value": str(lookup.get("lookup_value") or lookup_value),
         "matched": bool(lookup.get("matched_entities")),
         "match_reason": str(lookup.get("match_reason") or ""),
-        "lookup_term": lookup_value,
         "candidate_doc_ids": list(lookup.get("candidate_doc_ids") or []),
         "candidate_section_ids": list(lookup.get("candidate_section_ids") or []),
         "required_anchors": list(lookup.get("required_anchors") or []),
         "matched_entities": list(lookup.get("matched_entities") or []),
+        "ambiguous": bool(lookup.get("ambiguous", False)),
+        "fallback_used": bool(lookup.get("fallback_used", False)),
     }
     if not graph_debug["matched"]:
         graph_debug["applied_doc_ids"] = list(analysis.doc_ids or [])
@@ -986,7 +1019,7 @@ def node_analyze_query(state: AgentState) -> AgentState:
     started_at = perf_counter()
 
     analysis = _build_query_analysis(state["question"])
-    analysis, graph_lookup = _apply_definition_graph_lookup(
+    analysis, graph_lookup = _apply_graph_lookup(
         analysis,
         enabled=bool(state.get("graph_lookup_enabled", True)),
     )
@@ -997,12 +1030,15 @@ def node_analyze_query(state: AgentState) -> AgentState:
             state,
             {
                 "type": "graph_lookup_applied",
+                "lookup_type": str(graph_lookup.get("lookup_type") or ""),
                 "matched": bool(graph_lookup.get("matched", False)),
                 "match_reason": str(graph_lookup.get("match_reason") or ""),
-                "lookup_term": str(graph_lookup.get("lookup_term") or ""),
+                "lookup_value": str(graph_lookup.get("lookup_value") or ""),
                 "candidate_doc_ids": list(graph_lookup.get("candidate_doc_ids") or []),
                 "candidate_section_ids": list(graph_lookup.get("candidate_section_ids") or []),
                 "required_anchors": list(graph_lookup.get("required_anchors") or []),
+                "ambiguous": bool(graph_lookup.get("ambiguous", False)),
+                "fallback_used": bool(graph_lookup.get("fallback_used", False)),
                 "applied_doc_ids": list(graph_lookup.get("applied_doc_ids") or []),
             },
         )
@@ -1073,6 +1109,13 @@ def node_retrieve(state: AgentState) -> AgentState:
     ).strip()
     subqueries = list(plan_args.get("subqueries") or state.get("subqueries") or [])
     protected_spans = list(plan_args.get("protected_spans") or state.get("protected_spans") or [])
+    candidate_section_ids = []
+    if bool(state.get("graph_section_priors_enabled", True)):
+        candidate_section_ids = list(
+            plan_args.get("candidate_section_ids")
+            or (state.get("graph_lookup") or {}).get("candidate_section_ids")
+            or []
+        )
     canonical_query = str(plan.get("query") or state.get("canonical_query") or state["question"]).strip()
 
     state["tool_calls"] = int(state.get("tool_calls", 0)) + 1
@@ -1101,6 +1144,7 @@ def node_retrieve(state: AgentState) -> AgentState:
                 "dense_query": dense_query,
                 "subqueries": subqueries,
                 "protected_spans": protected_spans,
+                "candidate_section_ids": candidate_section_ids or None,
                 "use_query_fusion": False,
                 "enable_mode_variants": False,
             }
@@ -1137,6 +1181,8 @@ def node_retrieve(state: AgentState) -> AgentState:
         "dense_query": dense_query,
         "subqueries": subqueries,
         "protected_spans": protected_spans,
+        "candidate_section_ids": candidate_section_ids,
+        "section_prior_applied": bool((tool_out.get("stats") or {}).get("section_prior_applied", False)),
         "timing_ms_retrieve": round_timing_ms,
     }
     state["last_retrieval_stats"] = stats
@@ -1232,6 +1278,7 @@ def node_refine_query(state: AgentState) -> AgentState:
                 "subqueries": refined_subqueries,
                 "protected_spans": list(state.get("protected_spans") or []),
                 "doc_ids": list(state.get("doc_ids") or []),
+                "candidate_section_ids": list((state.get("graph_lookup") or {}).get("candidate_section_ids") or []),
             },
             mode_hint=mode_hint,
         ),
@@ -1423,9 +1470,20 @@ def build_graph():
 GRAPH = build_graph()
 
 
-def run_agent(question: str, *, k: int | None = None, use_graph_lookup: bool = True) -> AgentState:
+def run_agent(
+    question: str,
+    *,
+    k: int | None = None,
+    use_graph_lookup: bool = True,
+    use_section_priors: bool = True,
+) -> AgentState:
     started_at = perf_counter()
-    state = init_state(question, k=k, use_graph_lookup=use_graph_lookup)
+    state = init_state(
+        question,
+        k=k,
+        use_graph_lookup=use_graph_lookup,
+        use_section_priors=use_section_priors,
+    )
     recursion_limit = max(20, MAX_STEPS * 4)
     out = GRAPH.invoke(state, config={"recursion_limit": recursion_limit})
     out.setdefault("timing_ms", {})["total"] = round((perf_counter() - started_at) * 1000.0, 3)

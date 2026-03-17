@@ -129,6 +129,19 @@ def test_service_ask_agent_maps_state(monkeypatch):
             "doc_family": "FIPS 203",
             "analysis_notes": "test",
             "answer_prompt_question": question,
+            "graph_lookup": {
+                "lookup_type": "term",
+                "lookup_value": "ML-KEM",
+                "matched": True,
+                "match_reason": "exact_normalized_term",
+                "candidate_doc_ids": ["NIST.FIPS.203"],
+                "candidate_section_ids": ["section::NIST.FIPS.203::2. Terms and Definitions"],
+                "required_anchors": ["ML-KEM"],
+                "matched_entities": [],
+                "ambiguous": False,
+                "fallback_used": False,
+                "applied_doc_ids": ["NIST.FIPS.203"],
+            },
             "final_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
             "draft_answer": "ML-KEM is a key-encapsulation mechanism [c1].",
             "citations": [
@@ -157,6 +170,7 @@ def test_service_ask_agent_maps_state(monkeypatch):
     assert payload["analysis"]["canonical_query"] == "ML-KEM"
     assert payload["analysis"]["sparse_query"] == "ML-KEM definition"
     assert payload["analysis"]["doc_ids"] == ["NIST.FIPS.203"]
+    assert payload["analysis"]["graph_lookup"]["lookup_type"] == "term"
     assert payload["trace_summary"]["entry_node"] == "analyze_query"
     assert payload["timing_ms"]["analyze"] == 1.0
     assert payload["timing_ms"]["total"] == 7.0
@@ -180,15 +194,31 @@ def test_service_ask_agent_uses_shared_trace_summarizer(monkeypatch):
         service_module,
         "summarize_trace",
         lambda state: {
-            "run": {"entry_node": "analyze_query", "result": "ok"},
-            "analysis": {"canonical_query": "ML-KEM", "mode_hint": "definition"},
+            "run": {
+                "entry_node": "analyze_query",
+                "result": "ok",
+                "graph_lookup": {"lookup_type": "term", "matched": True},
+            },
+            "analysis": {
+                "canonical_query": "ML-KEM",
+                "mode_hint": "definition",
+                "graph_lookup": {"lookup_type": "term", "lookup_value": "ML-KEM"},
+            },
         },
     )
 
     payload = service_module.ask_agent_question("What is ML-KEM?", k=3)
 
-    assert payload["trace_summary"] == {"entry_node": "analyze_query", "result": "ok"}
-    assert payload["analysis"] == {"canonical_query": "ML-KEM", "mode_hint": "definition"}
+    assert payload["trace_summary"] == {
+        "entry_node": "analyze_query",
+        "result": "ok",
+        "graph_lookup": {"lookup_type": "term", "matched": True},
+    }
+    assert payload["analysis"] == {
+        "canonical_query": "ML-KEM",
+        "mode_hint": "definition",
+        "graph_lookup": {"lookup_type": "term", "lookup_value": "ML-KEM"},
+    }
 
 
 def test_health_endpoint(monkeypatch):
@@ -305,6 +335,16 @@ def test_ask_agent_endpoint(monkeypatch):
                 "entry_node": "analyze_query",
                 "mode_hint": "definition",
                 "canonical_query": "ML-KEM",
+                "graph_lookup": {
+                    "lookup_type": "term",
+                    "matched": True,
+                    "match_reason": "exact_normalized_term",
+                    "ambiguous": False,
+                    "applied_doc_ids": ["NIST.FIPS.203"],
+                    "candidate_doc_ids": ["NIST.FIPS.203"],
+                    "candidate_section_ids_count": 1,
+                    "section_prior_applied": True,
+                },
             },
             "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 12.0, "total": 15.0},
             "analysis": {
@@ -323,6 +363,19 @@ def test_ask_agent_endpoint(monkeypatch):
                 "doc_family": "FIPS 203",
                 "analysis_notes": "test",
                 "answer_prompt_question": question,
+                "graph_lookup": {
+                    "lookup_type": "term",
+                    "lookup_value": "ML-KEM",
+                    "matched": True,
+                    "match_reason": "exact_normalized_term",
+                    "candidate_doc_ids": ["NIST.FIPS.203"],
+                    "candidate_section_ids": ["section::NIST.FIPS.203::2. Terms and Definitions"],
+                    "required_anchors": ["ML-KEM"],
+                    "matched_entities": [],
+                    "ambiguous": False,
+                    "fallback_used": False,
+                    "applied_doc_ids": ["NIST.FIPS.203"],
+                },
             },
         },
     )
@@ -334,7 +387,9 @@ def test_ask_agent_endpoint(monkeypatch):
     assert payload["answer"].startswith("ML-KEM")
     assert payload["analysis"]["canonical_query"] == "ML-KEM"
     assert payload["analysis"]["dense_query"] == "definition and notation for ML-KEM in FIPS 203"
+    assert payload["analysis"]["graph_lookup"]["lookup_value"] == "ML-KEM"
     assert payload["trace_summary"]["entry_node"] == "analyze_query"
+    assert payload["trace_summary"]["graph_lookup"]["section_prior_applied"] is True
     assert payload["timing_ms"]["analyze"] == 1.0
 
 
@@ -349,6 +404,7 @@ def test_ask_agent_endpoint_refusal(monkeypatch):
                 "entry_node": "analyze_query",
                 "mode_hint": "general",
                 "canonical_query": question,
+                "graph_lookup": {},
             },
             "timing_ms": {"analyze": 1.0, "retrieve": 2.0, "generate": 0.0, "total": 3.5},
             "analysis": {
@@ -367,6 +423,7 @@ def test_ask_agent_endpoint_refusal(monkeypatch):
                 "doc_family": "",
                 "analysis_notes": "test",
                 "answer_prompt_question": question,
+                "graph_lookup": {},
             },
         },
     )

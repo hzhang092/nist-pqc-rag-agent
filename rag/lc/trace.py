@@ -170,12 +170,15 @@ def _compact_event(event: Dict[str, Any]) -> Dict[str, Any]:
         payload = _base()
         payload.update(
             {
+                "lookup_type": str(event.get("lookup_type") or ""),
                 "matched": bool(event.get("matched", False)),
                 "match_reason": str(event.get("match_reason") or ""),
-                "lookup_term": _preview_text(str(event.get("lookup_term") or ""), limit=_TIMELINE_TEXT_LIMIT),
+                "lookup_value": _preview_text(str(event.get("lookup_value") or ""), limit=_TIMELINE_TEXT_LIMIT),
                 "candidate_doc_ids": _preview_list(event.get("candidate_doc_ids") or []),
                 "candidate_section_ids": _preview_list(event.get("candidate_section_ids") or []),
                 "required_anchors": _preview_list(event.get("required_anchors") or []),
+                "ambiguous": bool(event.get("ambiguous", False)),
+                "fallback_used": bool(event.get("fallback_used", False)),
                 "applied_doc_ids": _preview_list(event.get("applied_doc_ids") or []),
             }
         )
@@ -218,6 +221,8 @@ def _compact_event(event: Dict[str, Any]) -> Dict[str, Any]:
                 "dense_query": _preview_text(str(event.get("dense_query") or ""), limit=_TIMELINE_TEXT_LIMIT),
                 "subqueries": _preview_list(event.get("subqueries") or []),
                 "protected_spans": _preview_list(event.get("protected_spans") or []),
+                "candidate_section_ids_count": int(event.get("candidate_section_ids_count", 0) or 0),
+                "section_prior_applied": bool(event.get("section_prior_applied", False)),
                 "timing_ms_retrieve": round(float(event.get("timing_ms_retrieve", 0.0) or 0.0), 3),
             }
         )
@@ -350,6 +355,28 @@ def _analysis_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "doc_family": str(state.get("doc_family") or ""),
         "analysis_notes": str(state.get("analysis_notes") or ""),
         "answer_prompt_question": str(state.get("answer_prompt_question") or state.get("question") or ""),
+        "graph_lookup": _json_copy(dict(state.get("graph_lookup") or {})),
+    }
+
+
+def _graph_lookup_summary(state: Dict[str, Any], timeline: List[Dict[str, Any]]) -> Dict[str, Any]:
+    graph_lookup = dict(state.get("graph_lookup") or {})
+    if not graph_lookup:
+        return {}
+    section_prior_applied = any(
+        bool(event.get("section_prior_applied", False))
+        for event in timeline
+        if event.get("type") == "retrieval_round_result"
+    )
+    return {
+        "lookup_type": str(graph_lookup.get("lookup_type") or ""),
+        "matched": bool(graph_lookup.get("matched", False)),
+        "match_reason": str(graph_lookup.get("match_reason") or ""),
+        "ambiguous": bool(graph_lookup.get("ambiguous", False)),
+        "applied_doc_ids": list(graph_lookup.get("applied_doc_ids") or []),
+        "candidate_doc_ids": list(graph_lookup.get("candidate_doc_ids") or []),
+        "candidate_section_ids_count": len(list(graph_lookup.get("candidate_section_ids") or [])),
+        "section_prior_applied": section_prior_applied,
     }
 
 
@@ -461,6 +488,8 @@ def _retrieval_summary(timeline: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "total_hits": 0,
                 "top_chunk_ids": [],
                 "top_doc_ids": [],
+                "candidate_section_ids_count": 0,
+                "section_prior_applied": False,
                 "sufficient": None,
                 "assessment_reasons": [],
                 "budget_reason": "",
@@ -503,6 +532,8 @@ def _retrieval_summary(timeline: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             round_summary["sparse_query"] = str(event.get("sparse_query") or "")
             round_summary["dense_query"] = str(event.get("dense_query") or "")
             round_summary["subqueries"] = _preview_list(event.get("subqueries") or [])
+            round_summary["candidate_section_ids_count"] = int(event.get("candidate_section_ids_count", 0) or 0)
+            round_summary["section_prior_applied"] = bool(event.get("section_prior_applied", False))
             round_summary["timing_ms_retrieve"] = round(float(event.get("timing_ms_retrieve", 0.0) or 0.0), 3)
             continue
 
@@ -547,6 +578,7 @@ def summarize_trace(
         "",
     )
     result = answer_summary["result"]
+    graph_lookup_summary = _graph_lookup_summary(payload, timeline)
     timing_ms = {
         "analyze": round(float((payload.get("timing_ms") or {}).get("analyze", 0.0) or 0.0), 3),
         "retrieve": round(float((payload.get("timing_ms") or {}).get("retrieve", 0.0) or 0.0), 3),
@@ -571,6 +603,7 @@ def summarize_trace(
         "citation_count": len(list(payload.get("citations") or [])),
         "top_chunk_ids": [item.get("chunk_id") for item in evidence_preview if item.get("chunk_id")],
         "timing_ms": timing_ms,
+        "graph_lookup": graph_lookup_summary,
     }
 
     return {

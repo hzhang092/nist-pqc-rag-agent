@@ -166,6 +166,7 @@ def _find_retrieve_entrypoint():
 
 def _find_planner_retrieve_entrypoint():
     candidates: List[Tuple[str, str]] = [
+        ("rag.retrieve", "execute_query_plan_with_stats"),
         ("rag.retrieve", "execute_query_plan"),
     ]
     last_err = None
@@ -240,7 +241,8 @@ def _run_retrieve(
     dense_query: Optional[str] = None,
     subqueries: Optional[List[str]] = None,
     protected_spans: Optional[List[str]] = None,
-) -> List[EvidenceItem]:
+    candidate_section_ids: Optional[List[str]] = None,
+) -> Tuple[List[EvidenceItem], Dict[str, Any]]:
     planner_requested = any(
         [
             str(sparse_query or "").strip(),
@@ -253,7 +255,7 @@ def _run_retrieve(
     if planner_requested:
         try:
             fn = _find_planner_retrieve_entrypoint()
-            hits = _call_with_flexible_signature(
+            planner_out = _call_with_flexible_signature(
                 fn,
                 query=query,
                 canonical_query=canonical_query or query,
@@ -261,13 +263,14 @@ def _run_retrieve(
                 dense_query=dense_query or query,
                 subqueries=subqueries,
                 protected_spans=protected_spans,
+                candidate_section_ids=candidate_section_ids,
                 k=k,
                 mode_hint=mode_hint,
                 doc_ids=doc_ids,
             )
         except RuntimeError:
             fn = _find_retrieve_entrypoint()
-            hits = _call_with_flexible_signature(
+            planner_out = _call_with_flexible_signature(
                 fn,
                 query=canonical_query or query,
                 k=k,
@@ -279,7 +282,7 @@ def _run_retrieve(
             )
     else:
         fn = _find_retrieve_entrypoint()
-        hits = _call_with_flexible_signature(
+        planner_out = _call_with_flexible_signature(
             fn,
             query=query,
             k=k,
@@ -289,8 +292,21 @@ def _run_retrieve(
             use_query_fusion=use_query_fusion,
             enable_mode_variants=enable_mode_variants,
         )
-    # Expect list of hits
-    return [_normalize_hit(h) for h in hits]
+    planner_stats: Dict[str, Any] = {}
+    hits: List[Any]
+    if isinstance(planner_out, dict) and "hits" in planner_out:
+        hits = list(planner_out.get("hits") or [])
+        planner_stats = dict(planner_out.get("stats") or {})
+    else:
+        hits = list(planner_out or [])
+    return [_normalize_hit(h) for h in hits], planner_stats
+
+
+def _split_retrieve_result(result: Any) -> Tuple[List[EvidenceItem], Dict[str, Any]]:
+    if isinstance(result, tuple) and len(result) == 2:
+        evidence, stats = result
+        return list(evidence), dict(stats or {})
+    return list(result or []), {}
 
 
 def _dedupe_evidence(items: List[EvidenceItem]) -> List[EvidenceItem]:
@@ -331,6 +347,7 @@ def retrieve(
     dense_query: Optional[str] = None,
     subqueries: Optional[List[str]] = None,
     protected_spans: Optional[List[str]] = None,
+    candidate_section_ids: Optional[List[str]] = None,
     use_query_fusion: bool = True,
     enable_mode_variants: bool = True,
 ) -> Dict[str, Any]:
@@ -340,7 +357,7 @@ def retrieve(
     """
     resolved_mode_hint = mode_hint or _mode_hint_from_query(query)
     resolved_doc_ids = _merge_doc_ids(doc_ids, doc_id)
-    evidence = _run_retrieve(
+    evidence, planner_stats = _split_retrieve_result(_run_retrieve(
         query=query,
         k=k,
         mode_hint=resolved_mode_hint,
@@ -350,9 +367,10 @@ def retrieve(
         dense_query=dense_query,
         subqueries=subqueries,
         protected_spans=protected_spans,
+        candidate_section_ids=candidate_section_ids,
         use_query_fusion=use_query_fusion,
         enable_mode_variants=enable_mode_variants,
-    )
+    ))
 
     return {
         "tool": "retrieve",
@@ -366,11 +384,10 @@ def retrieve(
             "dense_query": dense_query or query,
             "subqueries": list(subqueries or []),
             "protected_spans": list(protected_spans or []),
+            "candidate_section_ids": list(candidate_section_ids or []),
         },
         "evidence": [asdict(e) for e in evidence],
-        "stats": {
-            "n": len(evidence),
-        },
+        "stats": {"n": len(evidence), **planner_stats},
     }
 
 
@@ -389,14 +406,14 @@ def resolve_definition(
     """
     resolved_query = str(query or f"definition of {term}; notation; definitions")
     resolved_doc_ids = _merge_doc_ids(doc_ids, doc_id)
-    evidence = _run_retrieve(
+    evidence, planner_stats = _split_retrieve_result(_run_retrieve(
         query=resolved_query,
         k=k,
         mode_hint="definition",
         doc_ids=resolved_doc_ids,
         use_query_fusion=use_query_fusion,
         enable_mode_variants=enable_mode_variants,
-    )
+    ))
 
     return {
         "tool": "resolve_definition",
@@ -406,7 +423,7 @@ def resolve_definition(
         "mode_hint": "definition",
         "filters": {"doc_ids": resolved_doc_ids or []},
         "evidence": [asdict(e) for e in evidence],
-        "stats": {"n": len(evidence)},
+        "stats": {"n": len(evidence), **planner_stats},
     }
 
 
@@ -426,22 +443,22 @@ def compare(
     qa = f"{topic_a} intended use-cases; definition; key properties"
     qb = f"{topic_b} intended use-cases; definition; key properties"
 
-    ea = _run_retrieve(
+    ea, stats_a = _split_retrieve_result(_run_retrieve(
         query=qa,
         k=k,
         mode_hint="compare",
         doc_ids=doc_ids,
         use_query_fusion=use_query_fusion,
         enable_mode_variants=enable_mode_variants,
-    )
-    eb = _run_retrieve(
+    ))
+    eb, stats_b = _split_retrieve_result(_run_retrieve(
         query=qb,
         k=k,
         mode_hint="compare",
         doc_ids=doc_ids,
         use_query_fusion=use_query_fusion,
         enable_mode_variants=enable_mode_variants,
-    )
+    ))
 
     merged = _dedupe_evidence(ea + eb)
 
@@ -453,7 +470,14 @@ def compare(
         "mode_hint": "compare",
         "filters": {"doc_ids": list(doc_ids or [])},
         "evidence": [asdict(e) for e in merged],
-        "stats": {"n_a": len(ea), "n_b": len(eb), "n_merged": len(merged)},
+        "stats": {
+            "n_a": len(ea),
+            "n_b": len(eb),
+            "n_merged": len(merged),
+            "section_prior_applied": bool(
+                stats_a.get("section_prior_applied", False) or stats_b.get("section_prior_applied", False)
+            ),
+        },
     }
 
 
